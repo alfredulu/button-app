@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  ScrollView,
+} from "react-native";
 import PagerView from "react-native-pager-view";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -34,7 +41,10 @@ function useSlideEnter(isActive: boolean) {
       return;
     }
     const t = setTimeout(() => {
-      opacity.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic) });
+      opacity.value = withTiming(1, {
+        duration: 420,
+        easing: Easing.out(Easing.cubic),
+      });
       translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
     }, 150);
     return () => clearTimeout(t);
@@ -46,10 +56,18 @@ function useSlideEnter(isActive: boolean) {
   }));
 }
 
-function SlideBottom({ active, children }: { active: boolean; children: React.ReactNode }) {
+function SlideBottom({
+  active,
+  children,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+}) {
   const anim = useSlideEnter(active);
   return (
-    <Animated.View style={[anim, { width: "100%", alignItems: "center" }]}>{children}</Animated.View>
+    <Animated.View style={[anim, { width: "100%", alignItems: "center" }]}>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -89,10 +107,7 @@ function PulseRing({ delayMs }: { delayMs: number }) {
       pointerEvents="none"
       style={[
         StyleSheet.absoluteFillObject,
-        {
-          alignItems: "center",
-          justifyContent: "center",
-        },
+        { alignItems: "center", justifyContent: "center" },
         style,
       ]}
     >
@@ -112,7 +127,9 @@ function PulseRing({ delayMs }: { delayMs: number }) {
 function Slide1Illustration() {
   return (
     <View style={illustrationStyles.wrap}>
-      <View style={[illustrationStyles.softPanel, { backgroundColor: SOFT_BG }]}>
+      <View
+        style={[illustrationStyles.softPanel, { backgroundColor: SOFT_BG }]}
+      >
         <PulseRing delayMs={0} />
         <PulseRing delayMs={800} />
         <PulseRing delayMs={1600} />
@@ -140,8 +157,14 @@ function WaveBar({ h, delay }: { h: number; delay: number }) {
     const t = setTimeout(() => {
       scaleY.value = withRepeat(
         withSequence(
-          withTiming(1, { duration: 280 + Math.random() * 120, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0.35, { duration: 280 + Math.random() * 120, easing: Easing.inOut(Easing.sin) })
+          withTiming(1, {
+            duration: 280 + Math.random() * 120,
+            easing: Easing.inOut(Easing.sin),
+          }),
+          withTiming(0.35, {
+            duration: 280 + Math.random() * 120,
+            easing: Easing.inOut(Easing.sin),
+          })
         ),
         -1,
         true
@@ -174,7 +197,10 @@ function Slide2Illustration() {
   const glow = useSharedValue(0.85);
   useEffect(() => {
     glow.value = withRepeat(
-      withSequence(withTiming(1, { duration: 900 }), withTiming(0.85, { duration: 900 })),
+      withSequence(
+        withTiming(1, { duration: 900 }),
+        withTiming(0.85, { duration: 900 })
+      ),
       -1,
       true
     );
@@ -230,7 +256,14 @@ function Slide2Illustration() {
             }}
           />
         </View>
-        <View style={{ flexDirection: "row", alignItems: "center", height: 80, marginBottom: 28 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            height: 80,
+            marginBottom: 28,
+          }}
+        >
           {[24, 36, 20, 44, 28, 40, 18, 32].map((h, i) => (
             <WaveBar key={i} h={h} delay={i * 80} />
           ))}
@@ -286,15 +319,32 @@ function MiniEventCard({
         cardStyle,
       ]}
     >
-      <Text style={{ fontFamily: "DMSans_500Medium", fontSize: 14, color: INK, marginBottom: 2 }}>
+      <Text
+        style={{
+          fontFamily: "DMSans_500Medium",
+          fontSize: 14,
+          color: INK,
+          marginBottom: 2,
+        }}
+      >
         {title}
       </Text>
-      <Text style={{ fontFamily: "DMSans_400Regular", fontSize: 12, color: MUTED }}>{subtitle}</Text>
+      <Text
+        style={{ fontFamily: "DMSans_400Regular", fontSize: 12, color: MUTED }}
+      >
+        {subtitle}
+      </Text>
     </Animated.View>
   );
 }
 
-function GoogleCalendarMark({ showCheck, active }: { showCheck: boolean; active: boolean }) {
+function GoogleCalendarMark({
+  showCheck,
+  active,
+}: {
+  showCheck: boolean;
+  active: boolean;
+}) {
   const checkScale = useSharedValue(0);
   useEffect(() => {
     if (!active || !showCheck) {
@@ -329,7 +379,11 @@ function GoogleCalendarMark({ showCheck, active }: { showCheck: boolean; active:
         >
           <Calendar size={20} color={INK} strokeWidth={1.5} />
         </View>
-        <Text style={{ fontFamily: "DMSans_500Medium", fontSize: 14, color: INK }}>Google Calendar</Text>
+        <Text
+          style={{ fontFamily: "DMSans_500Medium", fontSize: 14, color: INK }}
+        >
+          Google Calendar
+        </Text>
       </View>
       {showCheck ? (
         <Animated.View
@@ -411,8 +465,14 @@ function Slide4Illustration() {
                 paddingVertical: 10,
               }}
             >
-              <Text style={{ fontFamily: "DMSans_400Regular", fontSize: 15, color: "#fff" }}>
-                📅 Hey — Dentist in 1 hour. You’ve got this 👊
+              <Text
+                style={{
+                  fontFamily: "DMSans_400Regular",
+                  fontSize: 15,
+                  color: "#fff",
+                }}
+              >
+                📅 Hey — Dentist in 1 hour. You've got this 👊
               </Text>
             </View>
             <Text
@@ -441,8 +501,24 @@ function Slide4Illustration() {
           }}
         >
           <Text style={{ fontSize: 22 }}>🔥</Text>
-          <Text style={{ fontFamily: "DMSerifDisplay_400Regular", fontSize: 22, color: INK }}>7</Text>
-          <Text style={{ fontFamily: "DMSans_400Regular", fontSize: 14, color: INK }}>7-day streak</Text>
+          <Text
+            style={{
+              fontFamily: "DMSerifDisplay_400Regular",
+              fontSize: 22,
+              color: INK,
+            }}
+          >
+            7
+          </Text>
+          <Text
+            style={{
+              fontFamily: "DMSans_400Regular",
+              fontSize: 14,
+              color: INK,
+            }}
+          >
+            7-day streak
+          </Text>
         </View>
       </View>
     </View>
@@ -468,16 +544,15 @@ function Slide5Illustration() {
   const R = 118;
   const box = R * 2 + 80;
   return (
-    <View style={[illustrationStyles.wrap, { position: "relative", width: box, height: box }]}>
+    <View
+      style={[
+        illustrationStyles.wrap,
+        { position: "relative", width: box, height: box },
+      ]}
+    >
       <Animated.View
         style={[
-          {
-            position: "absolute",
-            width: box,
-            height: box,
-            left: 0,
-            top: 0,
-          },
+          { position: "absolute", width: box, height: box, left: 0, top: 0 },
           orbitStyle,
         ]}
       >
@@ -551,7 +626,9 @@ export default function WelcomeOnboarding() {
     async (mode: "signup" | "signin") => {
       await setIntroOnboardingComplete();
       router.replace(
-        (mode === "signin" ? "/onboarding?mode=signin" : "/onboarding?mode=signup") as Href
+        (mode === "signin"
+          ? "/onboarding?mode=signin"
+          : "/onboarding?mode=signup") as Href
       );
     },
     [router]
@@ -562,14 +639,19 @@ export default function WelcomeOnboarding() {
     setPage(4);
   }, []);
 
-  const onPageSelected = useCallback((e: { nativeEvent: { position: number } }) => {
-    setPage(e.nativeEvent.position);
-  }, []);
+  const onPageSelected = useCallback(
+    (e: { nativeEvent: { position: number } }) => {
+      setPage(e.nativeEvent.position);
+    },
+    []
+  );
+
+  const isLastPage = page === SLIDE_COUNT - 1;
 
   return (
     <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
-        {page < 4 ? (
+        {!isLastPage ? (
           <Pressable onPress={skipToLast} style={styles.skipBtn} hitSlop={12}>
             <Text style={styles.skipText}>Skip</Text>
           </Pressable>
@@ -593,7 +675,8 @@ export default function WelcomeOnboarding() {
             <SlideBottom active={page === 0}>
               <Text style={styles.headline}>Meet Button.</Text>
               <Text style={styles.body}>
-                The fastest way to plan your day. No typing. No tapping. Just your voice.
+                The fastest way to plan your day. No typing. No tapping. Just
+                your voice.
               </Text>
               <Text style={styles.hintItalic}>Swipe to see how it works →</Text>
             </SlideBottom>
@@ -608,8 +691,9 @@ export default function WelcomeOnboarding() {
             <SlideBottom active={page === 1}>
               <Text style={styles.headline}>Hold. Speak. Done.</Text>
               <Text style={styles.body}>
-                Hold the button and speak your plans out loud. Say anything — “dentist tomorrow at 2, team call at 4,
-                dinner Friday at 7” — and Button understands all of it.
+                Hold the button and speak your plans out loud. Say anything —
+                "dentist tomorrow at 2, team call at 4, dinner Friday at 7" —
+                and Button understands all of it.
               </Text>
               <View style={styles.pillRow}>
                 {["🎤 Press", "🗣️ Speak", "⚡ Done"].map((label) => (
@@ -630,8 +714,9 @@ export default function WelcomeOnboarding() {
             <SlideBottom active={page === 2}>
               <Text style={styles.headline}>Every event. Instantly.</Text>
               <Text style={styles.body}>
-                Button pulls out every event from what you said and adds them all to your Google Calendar in one tap. No
-                copying. No switching apps.
+                Button pulls out every event from what you said and adds them
+                all to your Google Calendar in one tap. No copying. No switching
+                apps.
               </Text>
             </SlideBottom>
           </View>
@@ -645,45 +730,73 @@ export default function WelcomeOnboarding() {
             <SlideBottom active={page === 3}>
               <Text style={styles.headline}>Never forget. Never miss.</Text>
               <Text style={styles.body}>
-                Button texts you before every event so you’re always prepared. And your daily planning streak keeps you
-                consistent — one day at a time.
+                Button texts you before every event so you're always prepared.
+                And your daily planning streak keeps you consistent — one day at
+                a time.
               </Text>
-              <Text style={styles.smallNote}>SMS reminders available on Pro plan</Text>
+              <Text style={styles.smallNote}>
+                SMS reminders available on Pro plan
+              </Text>
             </SlideBottom>
           </View>
         </View>
 
+        {/* Last slide: ScrollView so buttons are never clipped on small screens */}
         <View key="4" style={styles.page}>
           <View style={styles.topZone}>
             <Slide5Illustration />
           </View>
-          <View style={styles.bottomZone}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.lastSlideScroll}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
             <SlideBottom active={page === 4}>
-              <Text style={styles.headlineLarge}>Give it a try. It’s free.</Text>
+              <Text style={styles.headlineLarge}>
+                Give it a try. It's free.
+              </Text>
               <Text style={styles.body}>
-                Plan up to 3 days a week for free. No credit card. No commitment. Just a better way to plan your life.
+                Plan up to 3 days a week for free. No credit card. No
+                commitment. Just a better way to plan your life.
               </Text>
               <Pressable
                 onPress={() => void goAuth("signup")}
-                style={({ pressed }) => [styles.ctaPrimary, pressed && { opacity: 0.92 }]}
+                style={({ pressed }) => [
+                  styles.ctaPrimary,
+                  pressed && { opacity: 0.92 },
+                ]}
               >
-                <Text style={styles.ctaPrimaryText}>Get Started — It’s Free</Text>
+                <Text style={styles.ctaPrimaryText}>
+                  Get Started — It's Free
+                </Text>
               </Pressable>
-              <Pressable onPress={() => void goAuth("signin")} style={styles.ctaSecondaryWrap}>
-                <Text style={styles.ctaSecondary}>Already have an account? Sign in</Text>
+              <Pressable
+                onPress={() => void goAuth("signin")}
+                style={styles.ctaSecondaryWrap}
+              >
+                <Text style={styles.ctaSecondary}>
+                  Already have an account? Sign in
+                </Text>
               </Pressable>
             </SlideBottom>
-          </View>
+          </ScrollView>
         </View>
       </PagerView>
 
-      <View style={styles.dots}>
-        {Array.from({ length: SLIDE_COUNT }, (_, i) => (
-          <View
-            key={i}
-            style={[styles.dot, { backgroundColor: i === page ? INK : DOT_INACTIVE }]}
-          />
-        ))}
+      {/* Dots row */}
+      <View style={styles.bottomBar}>
+        <View style={styles.dots}>
+          {Array.from({ length: SLIDE_COUNT }, (_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                { backgroundColor: i === page ? INK : DOT_INACTIVE },
+              ]}
+            />
+          ))}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -697,16 +810,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     justifyContent: "center",
   },
-  skipBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
+  skipBtn: { paddingVertical: 8, paddingHorizontal: 4 },
   skipSpacer: { height: 36 },
-  skipText: {
-    fontFamily: "DMSans_400Regular",
-    fontSize: 15,
-    color: MUTED,
-  },
+  skipText: { fontFamily: "DMSans_400Regular", fontSize: 15, color: MUTED },
   page: { flex: 1 },
   topZone: {
     flex: 0.55,
@@ -718,6 +824,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingBottom: 24,
     justifyContent: "flex-start",
+  },
+  lastSlideScroll: {
+    paddingHorizontal: 28,
+    paddingBottom: 24,
+    alignItems: "center",
   },
   headline: {
     fontFamily: "DMSerifDisplay_400Regular",
@@ -763,11 +874,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
   },
-  stepPillText: {
-    fontFamily: "DMSans_400Regular",
-    fontSize: 12,
-    color: INK,
-  },
+  stepPillText: { fontFamily: "DMSans_400Regular", fontSize: 12, color: INK },
   smallNote: {
     fontFamily: "DMSans_300Light",
     fontSize: 13,
@@ -798,15 +905,17 @@ const styles = StyleSheet.create({
     color: MUTED,
     textAlign: "center",
   },
+  bottomBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 18,
+    position: "relative",
+  },
   dots: {
     flexDirection: "row",
-    justifyContent: "center",
     gap: 8,
-    paddingBottom: 18,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });
