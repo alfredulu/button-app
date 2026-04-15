@@ -1,15 +1,31 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
+let Notifications: typeof import("expo-notifications") | null = null;
+
+const isExpoGo = Constants.executionEnvironment === "storeClient";
+
+async function getNotifications() {
+  if (isExpoGo) return null;
+  if (!Notifications) {
+    Notifications = await import("expo-notifications");
+  }
+  return Notifications;
+}
 import { Platform } from "react-native";
 import { api } from "@/lib/api/api";
 
 let _foregroundHandlerSet = false;
 
 /** Call once at startup so foreground notifications can display. */
-export function setupNotificationForegroundHandler(): void {
+export async function setupNotificationForegroundHandler(): Promise<void> {
+  if (isExpoGo) return;
+
   if (_foregroundHandlerSet) return;
   _foregroundHandlerSet = true;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return;
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
@@ -43,10 +59,15 @@ let _channelReady = false;
 
 async function ensureAndroidChannel() {
   if (Platform.OS !== "android" || _channelReady) return;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return;
+
   await Notifications.setNotificationChannelAsync("reminders", {
     name: "Reminders",
     importance: Notifications.AndroidImportance.DEFAULT,
   });
+
   _channelReady = true;
 }
 
@@ -57,7 +78,9 @@ export async function getReminderSettings(): Promise<ReminderSettings> {
     const parsed = JSON.parse(raw) as Partial<ReminderSettings>;
     const enabled = Boolean(parsed.enabled);
     const minutesBefore =
-      parsed.minutesBefore === 5 || parsed.minutesBefore === 10 || parsed.minutesBefore === 30
+      parsed.minutesBefore === 5 ||
+      parsed.minutesBefore === 10 ||
+      parsed.minutesBefore === 30
         ? parsed.minutesBefore
         : DEFAULT_SETTINGS.minutesBefore;
     return { enabled, minutesBefore };
@@ -66,13 +89,21 @@ export async function getReminderSettings(): Promise<ReminderSettings> {
   }
 }
 
-export async function setReminderSettings(next: ReminderSettings): Promise<void> {
+export async function setReminderSettings(
+  next: ReminderSettings
+): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
 
 export async function ensureReminderPermissions(): Promise<boolean> {
+  if (isExpoGo) return false;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return false;
+
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted) return true;
+
   const requested = await Notifications.requestPermissionsAsync();
   return requested.granted;
 }
@@ -92,6 +123,11 @@ function parseEventStart(ev: CalendarEvent): Date | null {
  * Safe to call when permission is denied — no-op.
  */
 export async function syncExpoPushTokenToBackend(): Promise<void> {
+  if (isExpoGo) return;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return;
+
   try {
     const perm = await Notifications.getPermissionsAsync();
     if (!perm.granted) return;
@@ -99,12 +135,16 @@ export async function syncExpoPushTokenToBackend(): Promise<void> {
     await ensureAndroidChannel();
 
     const projectId =
-      (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ??
-      Constants.easConfig?.projectId;
+      (
+        Constants.expoConfig?.extra as
+          | { eas?: { projectId?: string } }
+          | undefined
+      )?.eas?.projectId ?? Constants.easConfig?.projectId;
 
     const tokenResult = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
     );
+
     const token = tokenResult.data;
     if (!token) return;
 
@@ -114,7 +154,14 @@ export async function syncExpoPushTokenToBackend(): Promise<void> {
   }
 }
 
-export async function scheduleRemindersForAddedEvents(events: CalendarEvent[]): Promise<void> {
+export async function scheduleRemindersForAddedEvents(
+  events: CalendarEvent[]
+): Promise<void> {
+  if (isExpoGo) return;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return;
+
   const settings = await getReminderSettings();
   if (!settings.enabled) return;
 
@@ -131,7 +178,7 @@ export async function scheduleRemindersForAddedEvents(events: CalendarEvent[]): 
     if (!start) continue;
 
     const triggerAt = start.getTime() - leadMs;
-    if (triggerAt <= now + 5_000) continue; // skip immediate/past triggers
+    if (triggerAt <= now + 5_000) continue;
 
     await Notifications.scheduleNotificationAsync({
       content: {
@@ -139,8 +186,7 @@ export async function scheduleRemindersForAddedEvents(events: CalendarEvent[]): 
         body: `Starts in ${settings.minutesBefore} minutes`,
         data: { kind: "calendar-reminder" },
       },
-      trigger: { type: "date", date: new Date(triggerAt) },
+      trigger: new Date(triggerAt) as any,
     });
   }
 }
-
