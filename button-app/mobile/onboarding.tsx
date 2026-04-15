@@ -31,6 +31,7 @@ export default function Onboarding() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
+  const [mode, setMode] = useState<"login" | "signup">("signup");
 
   // Entrance animation shared values
   const logoOpacity = useSharedValue(0);
@@ -102,7 +103,12 @@ export default function Onboarding() {
     transform: [{ scale: buttonScale.value }],
   }));
 
-  const isDisabled = !email.trim() || loading;
+  const trimmedEmail = email.trim();
+  const isValidEmail =
+    trimmedEmail.length > 3 &&
+    trimmedEmail.includes("@") &&
+    trimmedEmail.includes(".");
+  const isDisabled = !isValidEmail || loading;
 
   if (!sessionLoading && sessionData?.user && !authInFlight.current) {
     return <Redirect href="/" />;
@@ -113,7 +119,7 @@ export default function Onboarding() {
 
     const trimmedEmail = email.trim();
 
-    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+    if (!isValidEmail) {
       Alert.alert("Invalid email", "Please enter a valid email address.");
       return;
     }
@@ -132,10 +138,25 @@ export default function Onboarding() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
-        options: { shouldCreateUser: true },
+        options: {
+          shouldCreateUser: mode === "signup",
+        },
       });
 
-      if (error) throw error;
+      if (error) {
+        // 🔥 safer login handling (don’t depend on exact message)
+        if (mode === "login") {
+          Alert.alert(
+            "Unable to sign in",
+            "Please make sure this email is registered or sign up instead."
+          );
+        } else {
+          Alert.alert("Error", error.message);
+        }
+
+        authInFlight.current = false; // ✅ fix
+        return;
+      }
 
       router.push(`/verify?email=${encodeURIComponent(trimmedEmail)}`);
       authInFlight.current = false;
@@ -146,8 +167,10 @@ export default function Onboarding() {
 
       const message =
         raw === "Network request failed" || raw.includes("fetch")
-          ? "Could not reach Supabase. Check your internet connection."
-          : raw || "Something went wrong. Please try again.";
+          ? "Check your internet connection and try again."
+          : raw.toLowerCase().includes("rate")
+            ? "Too many attempts. Please wait a bit before trying again."
+            : raw || "Something went wrong. Please try again.";
 
       Alert.alert("Error", message);
     } finally {
@@ -182,23 +205,41 @@ export default function Onboarding() {
             Enter your email
           </Animated.Text>
           <Animated.Text style={[styles.modeSubtitle, modeTitleStyle]}>
-            We'll send you a 6-digit code to sign in or create your account.
+            We’ll send you a 6-digit code to continue.
           </Animated.Text>
+
+          <View style={{ flexDirection: "row", marginBottom: 20 }}>
+            <Pressable onPress={() => setMode("login")}>
+              <Text
+                style={{ marginRight: 16, opacity: mode === "login" ? 1 : 0.4 }}
+              >
+                Login
+              </Text>
+            </Pressable>
+
+            <Pressable onPress={() => setMode("signup")}>
+              <Text style={{ opacity: mode === "signup" ? 1 : 0.4 }}>
+                Sign up
+              </Text>
+            </Pressable>
+          </View>
 
           <Animated.View style={emailInputStyle}>
             <TextInput
               style={[styles.input, emailFocused && styles.inputFocused]}
-              placeholder="Enter your email"
+              placeholder="you@email.com"
               placeholderTextColor="#9a9a95"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => setEmail(text.trimStart())}
               autoCapitalize="none"
               keyboardType="email-address"
               returnKeyType="done"
+              textContentType="emailAddress"
+              autoFocus
+              keyboardAppearance="light"
               onFocus={() => setEmailFocused(true)}
               onBlur={() => setEmailFocused(false)}
               onSubmitEditing={handleSubmit}
-              testID="email-input"
             />
           </Animated.View>
 
@@ -232,7 +273,13 @@ export default function Onboarding() {
                 {loading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text style={styles.darkButtonText}>Continue</Text>
+                  <Text style={styles.darkButtonText}>
+                    {loading
+                      ? "Sending..."
+                      : mode === "login"
+                        ? "Login"
+                        : "Sign up"}
+                  </Text>
                 )}
               </Animated.View>
             </Pressable>
