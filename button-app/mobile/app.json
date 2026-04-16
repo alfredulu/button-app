@@ -1,12 +1,14 @@
 {
   "expo": {
     "name": "vibecode",
+    "icon": "./assets/icon.png",
     "slug": "vibecode",
     "scheme": "vibecode",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "icon": "./assets/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.buttontech.button",
       "usesAppleSignIn": true,
