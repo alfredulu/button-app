@@ -86,7 +86,7 @@ export default function Verify() {
     );
   };
 
-  // ✅ focus fix (iOS safe)
+  // focus (iOS safe)
   useEffect(() => {
     const t = setTimeout(() => {
       inputRef.current?.focus();
@@ -214,7 +214,7 @@ export default function Verify() {
         {/* OTP INPUT AREA */}
         <View style={{ width: "100%", position: "relative" }}>
           <Pressable
-            style={{ width: "100%" }} // 👈 REQUIRED
+            style={{ width: "100%" }}
             onPress={() => {
               inputRef.current?.focus();
 

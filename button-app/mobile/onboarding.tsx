@@ -144,7 +144,7 @@ export default function Onboarding() {
       });
 
       if (error) {
-        // 🔥 safer login handling (don’t depend on exact message)
+        // safer login handling (don’t depend on exact message due to supabase inconsistency)
         if (mode === "login") {
           Alert.alert(
             "Unable to sign in",
@@ -154,7 +154,7 @@ export default function Onboarding() {
           Alert.alert("Error", error.message);
         }
 
-        authInFlight.current = false; // ✅ fix
+        authInFlight.current = false;
         return;
       }
 
