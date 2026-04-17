@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "vibecode",
+    "name": "Button",
     "icon": "./assets/icon.png",
     "slug": "vibecode",
     "scheme": "vibecode",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
