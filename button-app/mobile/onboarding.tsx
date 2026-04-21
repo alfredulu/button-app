@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -286,7 +287,17 @@ export default function Onboarding() {
           </Animated.View>
 
           <Animated.Text style={[styles.termsText, termsAnimStyle]}>
-            By continuing, you agree to our Terms and Privacy Policy.
+            By continuing, you agree to our{" "}
+            <Text
+              accessibilityRole="link"
+              style={styles.termsLink}
+              onPress={() =>
+                void Linking.openURL("https://getbuttonapp.com/privacy")
+              }
+            >
+              Terms and Privacy Policy
+            </Text>
+            .
           </Animated.Text>
         </View>
       </KeyboardAvoidingView>
@@ -383,5 +394,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     lineHeight: 16,
+  },
+  termsLink: {
+    fontFamily: "DMSans_400Regular",
+    color: "#1a1a18",
+    textDecorationLine: "underline",
   },
 });
