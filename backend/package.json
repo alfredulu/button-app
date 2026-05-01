@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "prisma generate",
+    "render:start": "prisma db push && bun run index.ts",
     "dev": "bun run --hot index.ts",
     "start": "bun run index.ts",
     "dev:node": "tsx watch run-node.ts",
@@ -26,17 +27,17 @@
     "@hono/zod-validator": "^0.7.6",
     "@prisma/client": "6",
     "@supabase/supabase-js": "^2.98.0",
-    "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.37.0",
     "@vibecodeapp/backend-sdk": "^1.0.1",
     "@vibecodeapp/cloud-studio": "^0.2.4",
     "@vibecodeapp/proxy": "^2.0.3",
     "better-auth": "^1.5.4",
+    "hono": "4.6.0",
+    "zod": "4.1.11",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
-    "hono": "4.6.0",
-    "jose": "^6.0.10",
-    "zod": "4.1.11"
+    "@upstash/ratelimit": "^2.0.5",
+    "@upstash/redis": "^1.34.3",
+    "jose": "^6.0.10"
   },
   "prisma": {
     "schema": "schema.prisma"

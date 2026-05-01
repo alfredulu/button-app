@@ -14,12 +14,7 @@ export async function processDueSmsReminders(): Promise<void> {
 
   for (const row of due) {
     const profile = await prisma.userProfile.findUnique({ where: { userId: row.userId } });
-    if (
-      profile?.smsFlagged ||
-      !profile?.phoneNumber ||
-      !profile.verifiedPhone ||
-      !profile.smsRemindersEnabled
-    ) {
+    if (!profile?.phoneNumber || !profile.verifiedPhone || !profile.smsRemindersEnabled) {
       await prisma.smsReminder.update({
         where: { id: row.id },
         data: { sent: true, sentAt: new Date(), deliveryStatus: "skipped_profile" },
@@ -27,7 +22,12 @@ export async function processDueSmsReminders(): Promise<void> {
       continue;
     }
 
-    const sent = await sendTwilioSmsGuarded(row.userId, profile.phoneNumber, row.messageBody, "reminder");
+    const sent = await sendTwilioSmsGuarded({
+      userId: row.userId,
+      phoneTo: profile.phoneNumber,
+      body: row.messageBody,
+      purpose: "reminder",
+    });
     await prisma.smsReminder.update({
       where: { id: row.id },
       data: {

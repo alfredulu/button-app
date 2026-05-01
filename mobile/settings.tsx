@@ -61,7 +61,10 @@ WebBrowser.maybeCompleteAuthSession();
 export default function SettingsScreen() {
   const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const [reminders, setReminders] = useState<ReminderSettings>({ enabled: false, minutesBefore: 10 });
+  const [reminders, setReminders] = useState<ReminderSettings>({
+    enabled: false,
+    minutesBefore: 10,
+  });
   const [phoneInput, setPhoneInput] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const [partnerUsername, setPartnerUsername] = useState("");
@@ -76,30 +79,35 @@ export default function SettingsScreen() {
   const { data: googleStatus } = useQuery<GoogleCalendarStatus>({
     queryKey: ["google-calendar-status"],
     queryFn: async () => {
-      const result = await api.get<GoogleCalendarStatus>("/api/google-calendar/status");
+      const result = await api.get<GoogleCalendarStatus>(
+        "/api/google-calendar/status"
+      );
       return result ?? { connected: false };
     },
     enabled: !!session?.user,
   });
 
-  const { data: planningProfile, refetch: refetchPlanning } = useQuery<PlanningProfile>({
-    queryKey: ["planning-profile"],
-    queryFn: async () => {
-      const result = await api.get<PlanningProfile>("/api/user/planning-profile");
-      return (
-        result ?? {
-          isPro: false,
-          phoneNumber: null,
-          verifiedPhone: false,
-          smsRemindersEnabled: false,
-          defaultReminderKind: "60",
-          username: null,
-          displayName: null,
-        }
-      );
-    },
-    enabled: !!session?.user,
-  });
+  const { data: planningProfile, refetch: refetchPlanning } =
+    useQuery<PlanningProfile>({
+      queryKey: ["planning-profile"],
+      queryFn: async () => {
+        const result = await api.get<PlanningProfile>(
+          "/api/user/planning-profile"
+        );
+        return (
+          result ?? {
+            isPro: false,
+            phoneNumber: null,
+            verifiedPhone: false,
+            smsRemindersEnabled: false,
+            defaultReminderKind: "60",
+            username: null,
+            displayName: null,
+          }
+        );
+      },
+      enabled: !!session?.user,
+    });
 
   const user = session?.user;
   const displayName = user?.email?.split("@")[0] || "User";
@@ -108,28 +116,43 @@ export default function SettingsScreen() {
   const googleConnected = googleStatus?.connected ?? false;
 
   useEffect(() => {
-    getReminderSettings().then(setReminders).catch(() => {});
+    getReminderSettings()
+      .then(setReminders)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (planningProfile?.phoneNumber) setPhoneInput(planningProfile.phoneNumber);
+    if (planningProfile?.phoneNumber)
+      setPhoneInput(planningProfile.phoneNumber);
   }, [planningProfile?.phoneNumber]);
 
   const redirectUri = useMemo(
-    () => AuthSession.makeRedirectUri({ scheme: "vibecode", path: "google-calendar" }),
+    () =>
+      AuthSession.makeRedirectUri({
+        scheme: "vibecode",
+        path: "google-calendar",
+      }),
     []
   );
 
   const handleToggleGoogleCalendar = async (nextValue: boolean) => {
     if (!session?.user) {
-      Alert.alert("Sign in required", "Please sign in to connect Google Calendar.");
+      Alert.alert(
+        "Sign in required",
+        "Please sign in to connect Google Calendar."
+      );
       return;
     }
 
     if (!nextValue) {
       try {
-        await api.post<{ connected: boolean }>("/api/google-calendar/disconnect", {});
-        await queryClient.invalidateQueries({ queryKey: ["google-calendar-status"] });
+        await api.post<{ connected: boolean }>(
+          "/api/google-calendar/disconnect",
+          {}
+        );
+        await queryClient.invalidateQueries({
+          queryKey: ["google-calendar-status"],
+        });
       } catch {
         Alert.alert("Error", "Could not disconnect Google Calendar.");
       }
@@ -137,10 +160,14 @@ export default function SettingsScreen() {
     }
 
     try {
-      const { url } = await api.get<{ url: string }>("/api/google-calendar/auth-url");
+      const { url } = await api.get<{ url: string }>(
+        "/api/google-calendar/auth-url"
+      );
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
       if (result.type !== "success") return;
-      await queryClient.invalidateQueries({ queryKey: ["google-calendar-status"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["google-calendar-status"],
+      });
     } catch (e: any) {
       Alert.alert("Error", e?.message ?? "Could not connect Google Calendar.");
     }
@@ -149,7 +176,9 @@ export default function SettingsScreen() {
   const handleManageSubscription = async () => {
     // Prefer RevenueCat helper if available, but keep robust fallbacks.
     try {
-      const anyPurchases = Purchases as unknown as { showManageSubscriptions?: () => Promise<void> | void };
+      const anyPurchases = Purchases as unknown as {
+        showManageSubscriptions?: () => Promise<void> | void;
+      };
       if (typeof anyPurchases.showManageSubscriptions === "function") {
         await anyPurchases.showManageSubscriptions();
         return;
@@ -164,7 +193,10 @@ export default function SettingsScreen() {
         : "https://play.google.com/store/account/subscriptions";
     const can = await Linking.canOpenURL(url);
     if (!can) {
-      Alert.alert("Unavailable", "Could not open subscription management on this device.");
+      Alert.alert(
+        "Unavailable",
+        "Could not open subscription management on this device."
+      );
       return;
     }
     await Linking.openURL(url);
@@ -208,7 +240,9 @@ export default function SettingsScreen() {
 
   const handleConnectPartner = async () => {
     try {
-      await api.post("/api/social/partner", { username: partnerUsername.trim().toLowerCase() });
+      await api.post("/api/social/partner", {
+        username: partnerUsername.trim().toLowerCase(),
+      });
       setPartnerUsername("");
       Alert.alert("Connected", "You’re now accountability partners.");
     } catch (e: unknown) {
@@ -224,7 +258,13 @@ export default function SettingsScreen() {
         text: "Sign out",
         style: "destructive",
         onPress: async () => {
-          await supabase.auth.signOut();
+          try {
+            await supabase.auth.signOut();
+            queryClient.clear();
+            router.replace("/welcome");
+          } catch {
+            Alert.alert("Error", "Could not sign out.");
+          }
         },
       },
     ]);
@@ -232,7 +272,10 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>Settings</Text>
 
         {/* Profile */}
@@ -245,7 +288,9 @@ export default function SettingsScreen() {
             <Text style={styles.profileEmail}>{user?.email}</Text>
           </View>
           <View style={[styles.planBadge, isPro && styles.planBadgePro]}>
-            <Text style={[styles.planBadgeText, isPro && styles.planBadgeTextPro]}>
+            <Text
+              style={[styles.planBadgeText, isPro && styles.planBadgeTextPro]}
+            >
               {isPro ? "Pro" : "Free"}
             </Text>
           </View>
@@ -293,7 +338,9 @@ export default function SettingsScreen() {
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowLabel}>Text reminders via Twilio</Text>
-                  <Text style={styles.rowNote}>Pro feature — upgrade to enable</Text>
+                  <Text style={styles.rowNote}>
+                    Pro feature — upgrade to enable
+                  </Text>
                 </View>
                 <ChevronRight size={16} color="#9a9a95" strokeWidth={1.5} />
               </TouchableOpacity>
@@ -303,14 +350,20 @@ export default function SettingsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowLabel}>SMS reminders</Text>
                     <Text style={styles.rowNote}>
-                      {planningProfile?.verifiedPhone ? "Phone verified" : "Verify your mobile number"}
+                      {planningProfile?.verifiedPhone
+                        ? "Phone verified"
+                        : "Verify your mobile number"}
                     </Text>
                   </View>
                   <Switch
-                    value={Boolean(planningProfile?.smsRemindersEnabled && planningProfile?.verifiedPhone)}
+                    value={Boolean(
+                      planningProfile?.smsRemindersEnabled &&
+                      planningProfile?.verifiedPhone
+                    )}
                     onValueChange={(v) =>
-                      patchPlanningSettings({ smsRemindersEnabled: v }).catch(() =>
-                        Alert.alert("Error", "Could not update SMS setting.")
+                      patchPlanningSettings({ smsRemindersEnabled: v }).catch(
+                        () =>
+                          Alert.alert("Error", "Could not update SMS setting.")
                       )
                     }
                     trackColor={{ false: "#e0e0dc", true: "#1a1a18" }}
@@ -319,8 +372,12 @@ export default function SettingsScreen() {
                   />
                 </View>
                 <View style={styles.rowDivider} />
-                <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}>
-                  <Text style={styles.rowLabel}>Phone (E.164, e.g. +15551234567)</Text>
+                <View
+                  style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}
+                >
+                  <Text style={styles.rowLabel}>
+                    Phone (E.164, e.g. +15551234567)
+                  </Text>
                   <TextInput
                     style={styles.textInput}
                     value={phoneInput}
@@ -330,7 +387,10 @@ export default function SettingsScreen() {
                     autoCapitalize="none"
                     keyboardType="phone-pad"
                   />
-                  <TouchableOpacity style={styles.smallBtn} onPress={handleSendPhoneCode}>
+                  <TouchableOpacity
+                    style={styles.smallBtn}
+                    onPress={handleSendPhoneCode}
+                  >
                     <Text style={styles.smallBtnText}>Send code</Text>
                   </TouchableOpacity>
                   <TextInput
@@ -342,7 +402,10 @@ export default function SettingsScreen() {
                     keyboardType="number-pad"
                     maxLength={6}
                   />
-                  <TouchableOpacity style={styles.smallBtn} onPress={handleVerifyPhone}>
+                  <TouchableOpacity
+                    style={styles.smallBtn}
+                    onPress={handleVerifyPhone}
+                  >
                     <Text style={styles.smallBtnText}>Verify</Text>
                   </TouchableOpacity>
                 </View>
@@ -351,16 +414,26 @@ export default function SettingsScreen() {
                   <Text style={styles.rowLabel}>Default lead time</Text>
                   <View style={styles.pillsRow}>
                     {REMINDER_KINDS.map(({ key, label }) => {
-                      const selected = (planningProfile?.defaultReminderKind ?? "60") === key;
+                      const selected =
+                        (planningProfile?.defaultReminderKind ?? "60") === key;
                       return (
                         <TouchableOpacity
                           key={key}
                           style={[styles.pill, selected && styles.pillSelected]}
                           onPress={() =>
-                            patchPlanningSettings({ defaultReminderKind: key }).catch(() => {})
+                            patchPlanningSettings({
+                              defaultReminderKind: key,
+                            }).catch(() => {})
                           }
                         >
-                          <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{label}</Text>
+                          <Text
+                            style={[
+                              styles.pillText,
+                              selected && styles.pillTextSelected,
+                            ]}
+                          >
+                            {label}
+                          </Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -376,8 +449,13 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>ACCOUNTABILITY PARTNER</Text>
             <View style={styles.sectionCard}>
-              <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}>
-                <Text style={styles.rowNote}>Connect with one partner (username). You’ll see streak & weekly score.</Text>
+              <View
+                style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 8 }}
+              >
+                <Text style={styles.rowNote}>
+                  Connect with one partner (username). You’ll see streak &
+                  weekly score.
+                </Text>
                 <TextInput
                   style={styles.textInput}
                   value={partnerUsername}
@@ -386,7 +464,10 @@ export default function SettingsScreen() {
                   placeholderTextColor="#9a9a95"
                   autoCapitalize="none"
                 />
-                <TouchableOpacity style={styles.smallBtn} onPress={handleConnectPartner}>
+                <TouchableOpacity
+                  style={styles.smallBtn}
+                  onPress={handleConnectPartner}
+                >
                   <Text style={styles.smallBtnText}>Connect</Text>
                 </TouchableOpacity>
               </View>
@@ -415,12 +496,16 @@ export default function SettingsScreen() {
               <View>
                 <Text style={styles.rowLabel}>Reminders</Text>
                 <Text style={styles.rowNote}>
-                  {reminders.enabled ? `${reminders.minutesBefore} min before` : "Off"}
+                  {reminders.enabled
+                    ? `${reminders.minutesBefore} min before`
+                    : "Off"}
                 </Text>
               </View>
               <Switch
                 value={reminders.enabled}
-                onValueChange={(v) => updateReminders({ ...reminders, enabled: v }).catch(() => {})}
+                onValueChange={(v) =>
+                  updateReminders({ ...reminders, enabled: v }).catch(() => {})
+                }
                 trackColor={{ false: "#e0e0dc", true: "#1a1a18" }}
                 thumbColor="#ffffff"
               />
@@ -439,10 +524,20 @@ export default function SettingsScreen() {
                           style={[styles.pill, selected && styles.pillSelected]}
                           activeOpacity={0.8}
                           onPress={() =>
-                            updateReminders({ ...reminders, minutesBefore: m as 5 | 10 | 30 }).catch(() => {})
+                            updateReminders({
+                              ...reminders,
+                              minutesBefore: m as 5 | 10 | 30,
+                            }).catch(() => {})
                           }
                         >
-                          <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{m}m</Text>
+                          <Text
+                            style={[
+                              styles.pillText,
+                              selected && styles.pillTextSelected,
+                            ]}
+                          >
+                            {m}m
+                          </Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -451,7 +546,11 @@ export default function SettingsScreen() {
               </>
             ) : null}
             <View style={styles.rowDivider} />
-            <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={handleSignOut}>
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={handleSignOut}
+            >
               <Text style={styles.rowLabelDanger}>Sign Out</Text>
             </TouchableOpacity>
           </View>

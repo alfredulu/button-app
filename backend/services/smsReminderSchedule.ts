@@ -11,11 +11,9 @@ export async function scheduleSmsRemindersForEvents(
   profile: UserProfile,
   created: CreatedCalendarEvent[],
   timeZone: string,
-  toUtc: ToUtc,
-  opts?: { isProEffective?: boolean }
+  toUtc: ToUtc
 ): Promise<void> {
-  const pro = opts?.isProEffective ?? profile.plan === "pro";
-  if (!pro) return;
+  if (profile.plan !== "pro") return;
   if (!profile.smsRemindersEnabled || !profile.verifiedPhone || !profile.phoneNumber) return;
   if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) return;
 
@@ -23,10 +21,8 @@ export async function scheduleSmsRemindersForEvents(
   const now = new Date();
 
   for (const ev of created) {
-    const [hhRaw, mmRaw] = ev.time.split(":").map((x) => Number(x));
-    const hh = Number.isFinite(hhRaw) ? hhRaw : 0;
-    const mm = Number.isFinite(mmRaw) ? mmRaw : 0;
-    const eventStartUtc = toUtc(ev.date, hh, mm, timeZone);
+    const [hh, mm] = ev.time.split(":").map((x) => Number(x));
+    const eventStartUtc = toUtc(ev.date, hh, Number.isFinite(mm) ? mm : 0, timeZone);
 
     let scheduledFor: Date;
     if (kind === "morning") {
@@ -41,7 +37,12 @@ export async function scheduleSmsRemindersForEvents(
     const phone = profile.phoneNumber;
 
     if (scheduledFor <= now) {
-      const sent = await sendTwilioSmsGuarded(profile.userId, phone, messageBody, "reminder");
+      const sent = await sendTwilioSmsGuarded({
+        userId: profile.userId,
+        phoneTo: phone,
+        body: messageBody,
+        purpose: "reminder",
+      });
       await prisma.smsReminder.create({
         data: {
           userId: profile.userId,

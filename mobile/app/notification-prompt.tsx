@@ -1,6 +1,18 @@
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
+
+const isExpoGo = Constants.executionEnvironment === "storeClient";
+
+let Notifications: typeof import("expo-notifications") | null = null;
+
+async function getNotifications() {
+  if (isExpoGo) return null;
+  if (!Notifications) {
+    Notifications = await import("expo-notifications");
+  }
+  return Notifications;
+}
 import { Redirect, useRouter, type Href } from "expo-router";
 import { Bell } from "lucide-react-native";
 import { useSession } from "@/lib/auth/use-session";
@@ -20,6 +32,12 @@ export default function NotificationPromptScreen() {
   };
 
   const onTurnOn = async () => {
+    const Notifications = await getNotifications();
+    if (!Notifications) {
+      await finish();
+      return;
+    }
+
     const { status } = await Notifications.requestPermissionsAsync();
     if (status === "granted") {
       await syncExpoPushTokenToBackend();
@@ -38,11 +56,15 @@ export default function NotificationPromptScreen() {
         </View>
         <Text style={styles.headline}>Don’t forget your plans.</Text>
         <Text style={styles.body}>
-          Button can remind you before every event so nothing slips through the cracks.
+          Button can remind you before every event so nothing slips through the
+          cracks.
         </Text>
         <Pressable
           onPress={() => void onTurnOn()}
-          style={({ pressed }) => [styles.primary, pressed && { opacity: 0.92 }]}
+          style={({ pressed }) => [
+            styles.primary,
+            pressed && { opacity: 0.92 },
+          ]}
         >
           <Text style={styles.primaryText}>Turn on reminders</Text>
         </Pressable>

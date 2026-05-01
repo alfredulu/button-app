@@ -3,9 +3,7 @@ import { prisma } from "../prisma";
 import { env } from "../env.ts";
 import type { SupabaseUser } from "../auth";
 import { rateLimit } from "../middleware/rateLimit";
-import { hybridUserHourlyLimit, transcribeHourlyLimit } from "../middleware/redisRateLimits";
-import { assertVoiceSessionQuota } from "../services/voiceSessionQuota";
-import { getEffectivePlan } from "../services/planResolution";
+import { upstashTranscribeLimit } from "../middleware/upstashLimits";
 import {
   ALLOWED_AUDIO_MIME_TYPES,
   MAX_AUDIO_SIZE_BYTES,
@@ -20,6 +18,14 @@ import {
   maybeAwardProBadgesAfterTranscribe,
 } from "../services/badges";
 import { localHourAndMinuteInTimeZone, DEFAULT_TIME_ZONE } from "../lib/zonedTime";
+import { getEffectivePlan } from "../services/planResolution";
+import {
+  countVoiceSessionsUtcDay,
+  countVoiceSessionsUtcMonth,
+  MAX_VOICE_SESSIONS_PER_DAY,
+  MAX_VOICE_SESSIONS_PER_MONTH,
+  utcDayStart,
+} from "../services/voiceSessionQuota";
 
 export const transcribeRouter = new Hono<{
   Variables: {
@@ -27,47 +33,18 @@ export const transcribeRouter = new Hono<{
   };
 }>();
 
-transcribeRouter.post(
-  "/",
-  hybridUserHourlyLimit(transcribeHourlyLimit, 10, "rl:tx", "authStrict"),
-  rateLimit("authStrict"),
-  async (c) => {
+transcribeRouter.post("/", rateLimit("authStrict"), upstashTranscribeLimit, async (c) => {
   const user = c.get("user");
   if (!user) {
     return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
   }
 
-  const quota = await assertVoiceSessionQuota(user.id);
-  if (!quota.ok) {
-    if (quota.reason === "daily") {
-      return c.json(
-        {
-          error: {
-            message: "Daily limit reached. Try again tomorrow.",
-            code: "VOICE_DAILY_LIMIT",
-          },
-        },
-        429
-      );
-    }
-    return c.json(
-      {
-        error: {
-          message: "Monthly voice session limit reached. Try again next month or upgrade.",
-          code: "VOICE_MONTHLY_LIMIT",
-        },
-      },
-      429
-    );
-  }
+  const plan = await getEffectivePlan(user.id);
 
-  // Plan enforcement (free tier uses DB week fields; Pro from RevenueCat / DB)
   let profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
   if (!profile) {
     profile = await prisma.userProfile.create({ data: { userId: user.id } });
   }
-
-  const isPro = (await getEffectivePlan(user.id)) === "pro";
 
   const now = new Date();
   const lastMonday = new Date(now);
@@ -92,7 +69,7 @@ transcribeRouter.post(
   }
 
   const today = now.toISOString().split("T")[0] as string;
-  if (!isPro && !daysUsed.includes(today) && daysUsed.length >= 3) {
+  if (plan === "free" && !daysUsed.includes(today) && daysUsed.length >= 3) {
     return c.json(
       {
         error: {
@@ -123,18 +100,6 @@ transcribeRouter.post(
     typeof durationRaw === "string" && durationRaw.trim() !== ""
       ? Math.min(24 * 3600, Math.max(0, Math.floor(Number(durationRaw))))
       : 0;
-
-  if (durationSecs < 1) {
-    return c.json(
-      {
-        error: {
-          message: "Recording must be at least 1 second long.",
-          code: "AUDIO_TOO_SHORT",
-        },
-      },
-      400
-    );
-  }
   const tzRaw = formData.get("timeZone");
   const sessionTimeZone =
     typeof tzRaw === "string" && tzRaw.trim().length > 0 ? tzRaw.trim() : null;
@@ -165,6 +130,52 @@ transcribeRouter.post(
         },
       },
       400
+    );
+  }
+
+  if (durationSecs < 1) {
+    return c.json(
+      {
+        error: {
+          message: "Audio must be at least 1 second long.",
+          code: "AUDIO_TOO_SHORT",
+        },
+      },
+      400
+    );
+  }
+
+  const dayStart = utcDayStart(now);
+  const monthStart = utcMonthStart(now);
+  const [dayCount, monthCount] = await Promise.all([
+    countVoiceSessionsUtcDay(user.id, dayStart),
+    countVoiceSessionsUtcMonth(user.id, monthStart),
+  ]);
+
+  if (monthCount >= MAX_VOICE_SESSIONS_PER_MONTH) {
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+    c.header("Retry-After", String(Math.max(60, Math.ceil((nextMonth.getTime() - now.getTime()) / 1000))));
+    return c.json(
+      {
+        error: {
+          message: "Monthly limit reached. Try again next month.",
+          code: "MONTHLY_LIMIT",
+        },
+      },
+      429
+    );
+  }
+
+  if (dayCount >= MAX_VOICE_SESSIONS_PER_DAY) {
+    c.header("Retry-After", 86400);
+    return c.json(
+      {
+        error: {
+          message: "Daily limit reached. Try again tomorrow.",
+          code: "DAILY_LIMIT",
+        },
+      },
+      429
     );
   }
 
@@ -239,7 +250,7 @@ transcribeRouter.post(
       });
     }
 
-    if (!daysUsed.includes(today)) {
+    if (plan === "free" && !daysUsed.includes(today)) {
       daysUsed.push(today);
       await prisma.userProfile.update({
         where: { id: profile.id },
@@ -268,5 +279,3 @@ transcribeRouter.post(
     return c.json({ error: { message: "An unexpected error occurred. Please try again.", code: "INTERNAL_ERROR" } }, 500);
   }
 });
-
-

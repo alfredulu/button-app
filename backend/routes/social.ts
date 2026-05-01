@@ -4,7 +4,6 @@ import type { SupabaseUser } from "../auth";
 import { prisma } from "../prisma";
 import { rateLimit } from "../middleware/rateLimit";
 import { validateBody } from "../middleware/validation";
-import { stripHtmlAndScripts } from "../lib/stripHtml";
 import { getEffectivePlan } from "../services/planResolution";
 
 const partnerSchema = z.object({
@@ -22,13 +21,13 @@ socialRouter.get("/search", rateLimit("authDefault"), async (c) => {
   const user = c.get("user");
   if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
+  const plan = await getEffectivePlan(user.id);
   const me = await prisma.userProfile.findUnique({ where: { userId: user.id } });
-  const isPro = (await getEffectivePlan(user.id)) === "pro";
-  if (!me || !isPro) {
+  if (!me || plan !== "pro") {
     return c.json({ error: { message: "Pro only", code: "PRO_REQUIRED" } }, 403);
   }
 
-  const q = stripHtmlAndScripts((c.req.query("q") ?? "").trim().toLowerCase());
+  const q = (c.req.query("q") ?? "").trim().toLowerCase();
   if (q.length < 2) return c.json({ data: { users: [] as { username: string; displayName: string | null }[] } });
 
   const rows = await prisma.userProfile.findMany({
@@ -58,9 +57,9 @@ socialRouter.post(
     const user = c.get("user");
     if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
+    const plan = await getEffectivePlan(user.id);
     const me = await prisma.userProfile.findUnique({ where: { userId: user.id } });
-    const isProMe = (await getEffectivePlan(user.id)) === "pro";
-    if (!me || !isProMe) {
+    if (!me || plan !== "pro") {
       return c.json({ error: { message: "Pro only", code: "PRO_REQUIRED" } }, 403);
     }
 
@@ -71,8 +70,7 @@ socialRouter.post(
     if (!target || target.userId === user.id) {
       return c.json({ error: { message: "User not found", code: "NOT_FOUND" } }, 404);
     }
-    const targetPro = (await getEffectivePlan(target.userId)) === "pro";
-    if (!targetPro) {
+    if (target.plan !== "pro") {
       return c.json({ error: { message: "Partner must be on Pro", code: "NOT_PRO" } }, 400);
     }
 

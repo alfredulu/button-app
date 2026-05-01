@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { stripHtmlAndScripts } from "../lib/stripHtml";
+import { sanitizeUserText } from "../lib/sanitize";
 import { prisma } from "../prisma";
 import { refreshAccessTokenIfNeeded, ensureProfile } from "./googleCalendarTokens";
 import { DEFAULT_TIME_ZONE, localHourAndMinuteInTimeZone, localYmdInTimeZone, utcInstantForLocalWallClock } from "../lib/zonedTime";
@@ -22,22 +22,22 @@ export const calendarAddBodySchema = z.object({
     z.object({
       title: z
         .string()
-        .transform((s) => stripHtmlAndScripts(s.trim()))
-        .pipe(z.string().min(1).max(500)),
+        .min(1)
+        .max(500)
+        .transform((s) => sanitizeUserText(s, 500)),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       time: z.string().regex(/^\d{2}:\d{2}$/),
       description: z
         .string()
         .optional()
         .default("")
-        .transform((s) => stripHtmlAndScripts(s.trim()))
-        .pipe(z.string().max(500)),
+        .transform((s) => sanitizeUserText(s, 500)),
       durationMins: z.number().int().min(5).max(24 * 60).optional().default(60),
       location: z
         .string()
+        .max(500)
         .optional()
-        .transform((s) => (s == null || s === "" ? undefined : stripHtmlAndScripts(s.trim())))
-        .refine((s) => s === undefined || s.length <= 500, { message: "location max 500 chars" }),
+        .transform((s) => (s === undefined ? undefined : sanitizeUserText(s, 500))),
     })
   ),
   calendarId: z.string().optional().default("primary"),
@@ -115,11 +115,11 @@ export async function addEventsViaGoogleCalendar(
 }
 
 export async function runPostCalendarAddHooks(userId: string, created: CreatedCalendarEvent[], timeZone: string) {
+  await getEffectivePlan(userId);
   const tz = timeZone || DEFAULT_TIME_ZONE;
   const now = new Date();
   const todayYmd = localYmdInTimeZone(now, tz);
   const { hour: planningHour } = localHourAndMinuteInTimeZone(now, tz);
-  const isProEffective = (await getEffectivePlan(userId)) === "pro";
 
   let profile = await ensureProfile(userId);
   profile = await ensureProBadgeProgressStarted(profile);
@@ -144,7 +144,7 @@ export async function runPostCalendarAddHooks(userId: string, created: CreatedCa
     data: { totalEventsScheduled: { increment: created.length } },
   });
 
-  if (isProEffective) {
+  if (profile.plan === "pro") {
     profile = await bumpWeekStatsAfterCalendarAdd(profile, created.length, planningHour, isNewPlanningDay);
   }
 
@@ -154,9 +154,7 @@ export async function runPostCalendarAddHooks(userId: string, created: CreatedCa
   await maybeAwardStreakBadges(profile, profile.badgeEligibleStreak);
   await maybeAwardWeekendWarrior(userId, todayYmd, tz);
 
-  await scheduleSmsRemindersForEvents(profile, created, tz, utcInstantForLocalWallClock, {
-    isProEffective,
-  });
+  await scheduleSmsRemindersForEvents(profile, created, tz, utcInstantForLocalWallClock);
 
   return { profile };
 }

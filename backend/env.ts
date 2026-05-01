@@ -21,7 +21,16 @@ const envSchema = z.object({
   PORT: z.string().optional().default("3000"),
   NODE_ENV: z.string().optional(),
   BACKEND_URL: z.string().default("http://localhost:3000"),
-  DATABASE_URL: z.string().default("file:./dev.db"),
+  DATABASE_URL: z
+    .string()
+    .min(1, "DATABASE_URL is required")
+    .refine(
+      (u) =>
+        u.startsWith("postgresql://") ||
+        u.startsWith("postgres://") ||
+        u.startsWith("prisma+postgres://"),
+      { message: "DATABASE_URL must be a PostgreSQL URL (Render Postgres, Neon, etc.)" }
+    ),
   BETTER_AUTH_SECRET: z.string().optional(),
 
   // OWASP: Validate the OpenAI API key starts with "sk-" to catch misconfigured keys
@@ -67,26 +76,23 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
 
-  /** Upstash Redis — required in production for distributed rate limits (optional in dev → in-memory fallback). */
-  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
-  /** RevenueCat REST API (secret) — server-side entitlement checks. */
   REVENUECAT_SECRET_API_KEY: z.string().optional(),
-  /** Bearer token RevenueCat sends on webhooks (dashboard → Webhooks → Authorization). */
   REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
-  REVENUECAT_ENTITLEMENT_PRO: z.string().optional().default("pro"),
+  REVENUECAT_ENTITLEMENT_PRO: z.string().optional(),
 
-  SECURITY_ALERT_EMAIL: z.string().email().optional(),
+  SECURITY_ALERT_EMAIL: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
 
-  /** Protect internal cron routes (e.g. weekly digest). */
   CRON_SECRET: z.string().optional(),
 
-  /** Supabase service role — server only; required for Apple notifications + admin user ops. */
+  /** Supabase service role — required for Apple S2S notifications + auth admin (never expose to client). */
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-  /** JWT `aud` for Apple server notifications (bundle ID / Services ID). Defaults in code if unset. */
+
+  /** `aud` claim for Sign in with Apple server notifications (native app = bundle ID). */
   APPLE_NOTIFICATIONS_AUDIENCE: z.string().optional(),
 });
 

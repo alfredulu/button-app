@@ -1,69 +1,52 @@
 import { Hono } from "hono";
-import { z } from "zod";
-import { env } from "../env.ts";
 import { rateLimit } from "../middleware/rateLimit";
+import { verifyAppleServerNotificationJwt } from "../lib/verifyAppleNotificationJwt";
 import { getSupabaseAdmin } from "../lib/supabaseAdmin";
-import { verifyAppleNotificationPayload } from "../lib/verifyAppleNotificationJwt";
 import { processAppleNotificationEvent } from "../services/appleNotificationService";
-
-const DEFAULT_APPLE_AUDIENCE = "com.buttontech.button";
-
-const bodySchema = z.object({
-  payload: z.string().min(1),
-});
+import { env } from "../env.ts";
 
 /**
- * Sign in with Apple server-to-server notifications.
- * Full path: POST /api/auth/apple/notifications
+ * Sign in with Apple server-to-server notifications (TLS 1.2+).
+ * POST body: { "payload": "<JWS>" }
+ * @see https://developer.apple.com/documentation/sign_in_with_apple/processing_changes_for_sign_in_with_apple_accounts
  */
-export const appleAuthRouter = new Hono();
+export const appleNotificationsRouter = new Hono();
 
-// Browsers and “ping URL” checks use GET — without this, they see 404 and think the route is missing.
-appleAuthRouter.get("/apple/notifications", rateLimit("publicStrict"), (c) =>
-  c.json({
-    ok: true,
-    path: "/api/auth/apple/notifications",
-    note: "Apple sends POST with JSON { \"payload\": \"<JWS>\" }. This GET response only confirms the URL is routed.",
-  })
-);
-
-appleAuthRouter.post("/apple/notifications", rateLimit("publicStrict"), async (c) => {
-  if (!getSupabaseAdmin()) {
+appleNotificationsRouter.post("/apple/notifications", rateLimit("publicStrict"), async (c) => {
+  const admin = getSupabaseAdmin();
+  if (!admin) {
     return c.json(
       { error: { message: "Apple notifications require SUPABASE_SERVICE_ROLE_KEY", code: "NOT_CONFIGURED" } },
       503
     );
   }
 
-  let json: unknown;
+  let body: unknown;
   try {
-    json = await c.req.json();
+    body = await c.req.json();
   } catch {
     return c.json({ error: { message: "Invalid JSON", code: "BAD_REQUEST" } }, 400);
   }
 
-  const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) {
-    return c.json({ error: { message: "Expected JSON body { payload: string }", code: "BAD_REQUEST" } }, 400);
+  const payload = (body as { payload?: unknown }).payload;
+  if (typeof payload !== "string" || payload.length === 0) {
+    return c.json({ error: { message: "Missing or invalid payload", code: "BAD_REQUEST" } }, 400);
   }
 
-  const audience = env.APPLE_NOTIFICATIONS_AUDIENCE?.trim() || DEFAULT_APPLE_AUDIENCE;
+  const audience =
+    env.APPLE_NOTIFICATIONS_AUDIENCE?.trim() || "com.buttontech.button";
 
-  let events;
+  const event = await verifyAppleServerNotificationJwt(payload, audience);
+  if (!event) {
+    return c.json({ error: { message: "Forbidden", code: "FORBIDDEN" } }, 403);
+  }
+
   try {
-    events = await verifyAppleNotificationPayload(parsed.data.payload, audience);
-  } catch (err) {
-    console.warn("[apple-notification] JWT verification failed:", err instanceof Error ? err.message : err);
-    return c.json({ error: { message: "Invalid or unverified Apple token", code: "FORBIDDEN" } }, 403);
+    await processAppleNotificationEvent(event, admin);
+  } catch (e) {
+    console.error("[apple-notifications] handler error", e);
+    return c.json({ error: { message: "Internal error", code: "INTERNAL_ERROR" } }, 500);
   }
 
-  if (events.length === 0) {
-    console.warn("[apple-notification] verified JWT but no parseable events");
-  }
-
-  for (const ev of events) {
-    await processAppleNotificationEvent(ev);
-  }
-
-  return c.json({ received: true });
+  return c.json({ ok: true });
 });

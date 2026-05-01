@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { SupabaseUser } from "../auth";
 import { rateLimit } from "../middleware/rateLimit";
-import { calendarHourlyLimit, hybridUserHourlyLimit } from "../middleware/redisRateLimits";
+import { upstashCalendarAddLimit } from "../middleware/upstashLimits";
 import { validateBody } from "../middleware/validation";
 import { calendarAddBodySchema, addEventsViaGoogleCalendar, runPostCalendarAddHooks } from "../services/calendarAdd";
 import { DEFAULT_TIME_ZONE } from "../lib/zonedTime";
@@ -10,8 +10,8 @@ export const calendarRouter = new Hono<{ Variables: { user: SupabaseUser | null 
 
 calendarRouter.post(
   "/add",
-  hybridUserHourlyLimit(calendarHourlyLimit, 20, "rl:cal", "authStrict"),
   rateLimit("authStrict"),
+  upstashCalendarAddLimit,
   validateBody(calendarAddBodySchema),
   async (c) => {
     const user = c.get("user");

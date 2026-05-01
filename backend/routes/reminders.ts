@@ -3,20 +3,18 @@ import { Hono } from "hono";
 import { prisma } from "../prisma";
 import { env } from "../env.ts";
 import { rateLimit } from "../middleware/rateLimit";
-import { requireAuth } from "../middleware/requireAuth";
-import type { SupabaseUser } from "../auth";
-import {
-  hybridUserHourlyLimit,
-  remindersScheduleHourlyLimit,
-} from "../middleware/redisRateLimits";
 
 /**
  * Twilio status callback — no JWT; validates X-Twilio-Signature.
- * POST /api/reminders/webhook
  */
-export const remindersRouter = new Hono<{ Variables: { user: SupabaseUser | null } }>();
+export const remindersPublicRouter = new Hono();
 
-remindersRouter.post("/webhook", rateLimit("publicStrict"), async (c) => {
+/** Browsers use GET; Twilio status callbacks use POST with X-Twilio-Signature. */
+remindersPublicRouter.get("/webhook", (c) =>
+  c.text("Twilio webhook — use POST with application/x-www-form-urlencoded body and X-Twilio-Signature.", 200)
+);
+
+remindersPublicRouter.post("/webhook", rateLimit("publicStrict"), async (c) => {
   const token = env.TWILIO_AUTH_TOKEN;
   if (!token) return c.text("ok", 200);
 
@@ -55,22 +53,3 @@ remindersRouter.post("/webhook", rateLimit("publicStrict"), async (c) => {
 
   return c.text("ok", 200);
 });
-
-/**
- * Rate-limited surface for “reminder scheduling” (SMS rows are created from calendar add).
- */
-remindersRouter.post(
-  "/schedule",
-  rateLimit("authDefault"),
-  hybridUserHourlyLimit(remindersScheduleHourlyLimit, 20, "rl:rsched", "authDefault"),
-  requireAuth,
-  async (c) => {
-    return c.json({
-      data: {
-        ok: true,
-        message:
-          "SMS reminders are scheduled automatically when you add events via POST /api/calendar/add (or /api/google-calendar/add-events).",
-      },
-    });
-  }
-);

@@ -1,33 +1,28 @@
 import { prisma } from "../prisma";
 
-const MAX_PER_DAY = 10;
-const MAX_PER_MONTH = 50;
+const DAY_MS = 24 * 60 * 60_000;
 
-export type VoiceQuotaResult =
-  | { ok: true }
-  | { ok: false; reason: "daily" | "monthly" };
-
-/**
- * Enforce max 10 voice sessions per user per calendar day (UTC) and 50 per calendar month (UTC).
- */
-export async function assertVoiceSessionQuota(userId: string): Promise<VoiceQuotaResult> {
-  const now = new Date();
-  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
-
-  const dayCount = await prisma.voiceSession.count({
-    where: { userId, createdAt: { gte: startOfDay } },
-  });
-  if (dayCount >= MAX_PER_DAY) {
-    return { ok: false, reason: "daily" };
-  }
-
-  const monthCount = await prisma.voiceSession.count({
-    where: { userId, createdAt: { gte: startOfMonth } },
-  });
-  if (monthCount >= MAX_PER_MONTH) {
-    return { ok: false, reason: "monthly" };
-  }
-
-  return { ok: true };
+export function utcDayStart(d = new Date()): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 }
+
+export function utcMonthStart(d = new Date()): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+export async function countVoiceSessionsUtcDay(userId: string, dayStart: Date): Promise<number> {
+  const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+  return prisma.voiceSession.count({
+    where: { userId, createdAt: { gte: dayStart, lt: dayEnd } },
+  });
+}
+
+export async function countVoiceSessionsUtcMonth(userId: string, monthStart: Date): Promise<number> {
+  const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  return prisma.voiceSession.count({
+    where: { userId, createdAt: { gte: monthStart, lt: monthEnd } },
+  });
+}
+
+export const MAX_VOICE_SESSIONS_PER_DAY = 10;
+export const MAX_VOICE_SESSIONS_PER_MONTH = 50;

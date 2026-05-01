@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { ChevronDown, Calendar } from "lucide-react-native";
 import { api } from "@/lib/api/api";
+import { useFocusEffect } from "@react-navigation/native";
 
 type CalendarEvent = {
   id: string;
@@ -36,7 +37,13 @@ type VoiceSession = {
   events: CalendarEvent[];
 };
 
-function SessionRow({ session, index }: { session: VoiceSession; index: number }) {
+function SessionRow({
+  session,
+  index,
+}: {
+  session: VoiceSession;
+  index: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const rotation = useSharedValue(0);
   const rowOpacity = useSharedValue(0);
@@ -61,8 +68,14 @@ function SessionRow({ session, index }: { session: VoiceSession; index: number }
   useEffect(() => {
     const delay = index * 50;
     const timer = setTimeout(() => {
-      rowOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
-      rowY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+      rowOpacity.value = withTiming(1, {
+        duration: 350,
+        easing: Easing.out(Easing.cubic),
+      });
+      rowY.value = withTiming(0, {
+        duration: 350,
+        easing: Easing.out(Easing.cubic),
+      });
     }, delay);
     return () => clearTimeout(timer);
   }, []);
@@ -75,26 +88,42 @@ function SessionRow({ session, index }: { session: VoiceSession; index: number }
     if (nextExpanded) {
       contentOpacity.value = 0;
       contentY.value = 8;
-      contentOpacity.value = withTiming(1, { duration: 250, easing: Easing.out(Easing.cubic) });
-      contentY.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+      contentOpacity.value = withTiming(1, {
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+      });
+      contentY.value = withTiming(0, {
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+      });
     } else {
       contentOpacity.value = withTiming(0, { duration: 150 });
     }
   };
 
   const date = new Date(session.createdAt);
-  const dateStr = date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-  const snippet = session.transcript.length > 70
-    ? session.transcript.slice(0, 70) + "…"
-    : session.transcript;
+  const dateStr = date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  const snippet =
+    session.transcript.length > 70
+      ? session.transcript.slice(0, 70) + "…"
+      : session.transcript;
 
   return (
     <Animated.View style={[styles.sessionCard, rowStyle]}>
-      <TouchableOpacity onPress={toggle} activeOpacity={0.7} style={styles.sessionHeader}>
+      <TouchableOpacity
+        onPress={toggle}
+        activeOpacity={0.7}
+        style={styles.sessionHeader}
+      >
         <View style={styles.sessionMeta}>
           <Text style={styles.sessionDate}>{dateStr}</Text>
           <Text style={styles.sessionCount}>
-            {session.eventCount} event{session.eventCount !== 1 ? "s" : ""} added
+            {session.eventCount} event{session.eventCount !== 1 ? "s" : ""}{" "}
+            added
           </Text>
           <Text style={styles.sessionSnippet}>"{snippet}"</Text>
         </View>
@@ -124,10 +153,20 @@ function SessionRow({ session, index }: { session: VoiceSession; index: number }
 }
 
 export default function HistoryScreen() {
-  const { data: sessions, isLoading, refetch } = useQuery<VoiceSession[]>({
+  const {
+    data: sessions,
+    isLoading,
+    refetch,
+  } = useQuery<VoiceSession[]>({
     queryKey: ["sessions"],
     queryFn: () => api.get<VoiceSession[]>("/api/sessions"),
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -140,8 +179,14 @@ export default function HistoryScreen() {
   }));
 
   useEffect(() => {
-    headerOpacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
-    headerY.value = withTiming(0, { duration: 350, easing: Easing.out(Easing.cubic) });
+    headerOpacity.value = withTiming(1, {
+      duration: 350,
+      easing: Easing.out(Easing.cubic),
+    });
+    headerY.value = withTiming(0, {
+      duration: 350,
+      easing: Easing.out(Easing.cubic),
+    });
   }, []);
 
   const onRefresh = async () => {
@@ -163,17 +208,27 @@ export default function HistoryScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#9a9a95" />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#9a9a95"
+            />
+          }
           showsVerticalScrollIndicator={false}
         >
           {!sessions || sessions.length === 0 ? (
             <View style={styles.emptyState} testID="empty-state">
               <Calendar size={48} color="#e0e0dc" strokeWidth={1} />
               <Text style={styles.emptyTitle}>No sessions yet</Text>
-              <Text style={styles.emptySubtitle}>Hold the button to start planning</Text>
+              <Text style={styles.emptySubtitle}>
+                Hold the button to start planning
+              </Text>
             </View>
           ) : (
-            sessions.map((s, i) => <SessionRow key={s.id} session={s} index={i} />)
+            sessions.map((s, i) => (
+              <SessionRow key={s.id} session={s} index={i} />
+            ))
           )}
         </ScrollView>
       )}

@@ -3,7 +3,6 @@
 
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
-const { withVibecodeMetro } = require("@vibecodeapp/sdk/metro");
 const path = require("path");
 const fs = require("fs");
 
@@ -15,7 +14,9 @@ const sharedFolder = path.resolve(__dirname, "../shared");
 const sharedFolderExists = fs.existsSync(sharedFolder);
 
 // DEBUG: Log metro.config.js version and shared folder status at startup
-console.log("[Metro Config] Version: 2025-02-03-v3-fix-dynamic-imports (source: workspace-mobile)");
+console.log(
+  "[Metro Config] Version: 2025-02-03-v3-fix-dynamic-imports (source: workspace-mobile)"
+);
 console.log(`[Metro Config] Shared folder: ${sharedFolder}`);
 console.log(`[Metro Config] Shared folder exists: ${sharedFolderExists}`);
 
@@ -29,7 +30,6 @@ config.resolver.useWatchman = false;
 // Configure asset and source extensions.
 const { assetExts, sourceExts } = config.resolver;
 
-// SVG transformer is configured by withVibecodeMetro
 config.transformer = {
   ...config.transformer,
   getTransformOptions: async () => ({
@@ -64,7 +64,12 @@ config.resolver = {
     // assert (via @vibecodeapp/sdk extraNodeModules) → object.assign → has-symbols/shams;
     // Metro does not always resolve this subpath; point it at the real file.
     if (moduleName === "has-symbols/shams") {
-      const shamsPath = path.join(__dirname, "node_modules", "has-symbols", "shams.js");
+      const shamsPath = path.join(
+        __dirname,
+        "node_modules",
+        "has-symbols",
+        "shams.js"
+      );
       if (fs.existsSync(shamsPath)) {
         return { type: "sourceFile", filePath: shamsPath };
       }
@@ -77,13 +82,17 @@ config.resolver = {
     if (sharedFolderExists && moduleName.startsWith("@/shared/")) {
       const subpath = moduleName.slice("@/shared/".length);
       const resolvedPath = path.join(sharedFolder, subpath);
-      console.log(`[Metro Resolve] @/shared alias: ${moduleName} -> ${resolvedPath}`);
+      console.log(
+        `[Metro Resolve] @/shared alias: ${moduleName} -> ${resolvedPath}`
+      );
       return context.resolveRequest(context, resolvedPath, platform);
     }
 
     // Also handle exact @/shared import (without subpath)
     if (sharedFolderExists && moduleName === "@/shared") {
-      console.log(`[Metro Resolve] @/shared exact: ${moduleName} -> ${sharedFolder}`);
+      console.log(
+        `[Metro Resolve] @/shared exact: ${moduleName} -> ${sharedFolder}`
+      );
       return context.resolveRequest(context, sharedFolder, platform);
     }
 
@@ -91,12 +100,17 @@ config.resolver = {
     // These imports are incorrect (resolve to wrong location) but we redirect them
     // to the actual shared folder for backwards compatibility
     // IMPORTANT: Only apply to user code, NOT node_modules (e.g., better-auth has its own internal shared/)
-    if (sharedFolderExists && !context.originModulePath?.includes("node_modules")) {
+    if (
+      sharedFolderExists &&
+      !context.originModulePath?.includes("node_modules")
+    ) {
       const relativeSharedMatch = moduleName.match(/^(?:\.\.\/)+shared\/(.+)$/);
       if (relativeSharedMatch) {
         const subpath = relativeSharedMatch[1];
         const resolvedPath = path.join(sharedFolder, subpath);
-        console.log(`[Metro Resolve] RELATIVE SHARED: ${moduleName} -> ${resolvedPath}`);
+        console.log(
+          `[Metro Resolve] RELATIVE SHARED: ${moduleName} -> ${resolvedPath}`
+        );
         return context.resolveRequest(context, resolvedPath, platform);
       }
     }
@@ -110,7 +124,10 @@ config.resolver = {
 
     // Fix @better-auth/expo incorrectly importing metro-config (dev-time only)
     // This import shouldn't exist in client code - mock it
-    if (moduleName.includes("@expo/metro-config") || moduleName.includes("async-require")) {
+    if (
+      moduleName.includes("@expo/metro-config") ||
+      moduleName.includes("async-require")
+    ) {
       return { type: "empty" };
     }
 
@@ -135,4 +152,4 @@ config.resolver = {
 };
 
 // Integrate NativeWind with the Metro configuration.
-module.exports = withNativeWind(withVibecodeMetro(config), { input: "./global.css" });
+module.exports = withNativeWind(config, { input: "./global.css" });

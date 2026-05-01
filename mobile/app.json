@@ -1,12 +1,14 @@
 {
   "expo": {
-    "name": "vibecode",
+    "name": "Button",
+    "icon": "./assets/icon.png",
     "slug": "vibecode",
     "scheme": "vibecode",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "icon": "./assets/icon.png",
       "supportsTablet": true,
       "bundleIdentifier": "com.buttontech.button",
       "usesAppleSignIn": true,
@@ -33,6 +35,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "94597cd7-8560-47e4-9495-775edb5fed0b"
+      }
+    },
+    "owner": "crown12star"
   }
 }

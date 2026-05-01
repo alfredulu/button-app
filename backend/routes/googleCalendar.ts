@@ -4,7 +4,7 @@ import { prisma } from "../prisma";
 import { env } from "../env.ts";
 import type { SupabaseUser } from "../auth";
 import { rateLimit } from "../middleware/rateLimit";
-import { calendarHourlyLimit, hybridUserHourlyLimit } from "../middleware/redisRateLimits";
+import { upstashCalendarAddLimit, upstashAuthIpLimit } from "../middleware/upstashLimits";
 import { validateBody } from "../middleware/validation";
 import { ensureProfile } from "../services/googleCalendarTokens";
 import {
@@ -108,7 +108,7 @@ googleCalendarRouter.get("/auth-url", rateLimit("authDefault"), async (c) => {
   return c.json({ data: { url: url.toString() } });
 });
 
-googleCalendarRouter.get("/callback", rateLimit("publicStrict"), async (c) => {
+googleCalendarRouter.get("/callback", rateLimit("publicStrict"), upstashAuthIpLimit, async (c) => {
   const code = c.req.query("code");
   const state = c.req.query("state");
   const error = c.req.query("error");
@@ -190,8 +190,8 @@ googleCalendarRouter.post("/disconnect", rateLimit("authDefault"), async (c) => 
 
 googleCalendarRouter.post(
   "/add-events",
-  hybridUserHourlyLimit(calendarHourlyLimit, 20, "rl:cal", "authStrict"),
   rateLimit("authStrict"),
+  upstashCalendarAddLimit,
   validateBody(calendarAddBodySchema),
   async (c) => {
     const user = c.get("user");

@@ -1,31 +1,34 @@
-# Security operations (pre-launch)
+# Security checklist (Button API)
 
-## You configure in vendor dashboards (not in this repo)
+This document maps the launch security requirements to **what the server implements** vs **what you must configure in dashboards**.
 
-- **OpenAI:** Billing → hard limit **$100/mo**, email alert **$40** → `justin@getbuttonapp.com`.
-- **Twilio:** Spend cap **$50/mo**, alert **$20** → same email.
-- **Supabase:** Storage alert at **400MB** (dashboard / metrics).
-- **Hosting (Vercel/Railway/Render):** Error-rate alerts for **5xx** spikes.
+## Implemented in this codebase
 
-## Implemented in this API (SQLite + Prisma)
+- **Voice / OpenAI (server):** Max **10** voice sessions per user per **UTC day**, **50** per **UTC month**; **10MB** audio cap; allowed MIME types; **≥1s** duration; **429** with exact message *"Daily limit reached. Try again tomorrow."* when the daily cap is hit; monthly cap returns *"Monthly limit reached. Try again next month."*
+- **Twilio (server):** Max **5 successful SMS** per user per UTC day; **20 successful SMS** same day → `smsFlagged`, `smsBlockedAt`, optional Resend alert; **every attempt** logged in `TwilioLog`; phone verify codes **hashed** (scrypt + salt), **6 digits**, **10 min** expiry, max **3** wrong attempts then lockout; max **3 successful verification SMS** to the **same E.164 number** per rolling hour.
+- **RevenueCat:** Webhook at `POST /api/webhooks/revenuecat` — **403** if `Authorization` is not `Bearer <REVENUECAT_WEBHOOK_SECRET>` (or exact secret); subscriber refreshed via API; `getEffectivePlan()` syncs DB and is used for plan-sensitive routes.
+- **Twilio webhook:** `POST /api/reminders/webhook` validates **X-Twilio-Signature**; **403** on failure.
+- **Rate limits:** **Upstash Redis** when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set — `/api/transcribe` **10/hour/user**, `/api/calendar/add` and `/api/google-calendar/add-events` **20/hour/user**, `/api/reminders/schedule` **20/hour/user**, **5/IP/15min** on Google OAuth **callback** and phone **send-code** / **verify**. In-memory fallback if Upstash is unset (local dev only).
+- **Auth:** Protected routes require valid **Supabase JWT**; `user_id` from token only, not body.
+- **Input:** User text sanitized (HTML/script stripped), **500** char cap on key fields; Prisma only (no raw string SQL).
+- **Indexes:** `userId` (and reminder composite) on Prisma models as in `schema.prisma`.
+- **Weekly digest:** `GET /internal/weekly-digest` with `Authorization: Bearer <CRON_SECRET>` — emails summary via Resend when configured.
+- **Sign in with Apple (server-to-server):** `POST /api/auth/apple/notifications` — body `{ "payload": "<JWS>" }`. JWT signature verified with Apple’s JWKS; invalid/missing signature → **403**. Requires **`SUPABASE_SERVICE_ROLE_KEY`**. Handles **`account-deleted`** (Apple’s name; `account-delete` alias), **`consent-revoked`**, **`email-disabled`** / **`email-enabled`**. Resolves users by `UserProfile.appleSubject` or Supabase Auth identities (apple `sub`).
+- **Secrets:** Never commit `.env` (see `.gitignore`). Use Render / dashboard env for production.
 
-- JWT on all routes (user id from token only). Plan for gating uses **RevenueCat REST** when `REVENUECAT_SECRET_API_KEY` is set (cached), else **`UserProfile.plan`** (updated by webhooks).
-- **Upstash Redis** optional: set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` for distributed rate limits; otherwise **per-process memory** with the same numeric limits.
-- Voice: **10 sessions/day**, **50/month** (UTC), **10MB** audio, **≥1s** duration, **10/hour** rate limit per user on `/api/transcribe`.
-- SMS: **5/user/day**, **3 verification sends/phone/hour**, **20/day** auto-flag + block + alert email; **hashed** verification codes; **Twilio** + **RevenueCat** webhooks verify signatures (**403** on failure).
-- **Sign in with Apple (server-to-server):** `POST /api/auth/apple/notifications` with JSON `{ "payload": "<JWS>" }`. The JWS is verified with Apple’s JWKS (`iss` `https://appleid.apple.com`, `aud` your bundle ID); invalid token → **403**. Requires **`SUPABASE_SERVICE_ROLE_KEY`**. Handles **`account-deleted`** (and alias **`account-delete`**), **`consent-revoked`**, **`email-disabled`** (and **`email-enabled`**). Users are resolved by **`UserProfile.appleSubject`** or a paginated Supabase **`listUsers`** scan matching Apple identities.
-- `twilio_logs` table: **TwilioLog** model.
+## Configure manually (not in code)
 
-## Postgres RLS (Supabase)
+- **OpenAI:** Hard cap **$100/mo**, alert **$40** → justin@getbuttonapp.com.
+- **Twilio:** Hard cap **$50/mo**, alert **$20** → justin@getbuttonapp.com.
+- **Supabase:** Storage alert at **400MB** (dashboard); **raw audio** is not stored by this API path (multipart goes straight to OpenAI) — confirm the mobile app does not upload audio to Supabase Storage.
+- **RLS:** Application data lives in the **Postgres database** used by Prisma (e.g. Render Postgres), **not** as rows in Supabase Postgres. **Supabase RLS** applies to tables in the Supabase project. To use RLS as in the original checklist, either mirror critical tables into Supabase with policies, or treat **JWT + server-side `userId` filters** as the access model for this API (current design).
+- **npm audit / git history:** Run locally/CI; rotate any leaked secrets.
+- **Render / Vercel alerts:** Configure **500**-rate and uptime alerts on the hosting you use (API is on **Render** in current setup).
 
-App data lives in the **API database** (SQLite/Postgres via `DATABASE_URL`), not Supabase Postgres. **Row-level security** on Supabase tables applies only if you **migrate** app tables into Supabase and attach `auth.uid()` policies. Until then, enforcement is **JWT + Prisma** in this service.
+## Environment variables (production)
 
-## Secrets
+Required for core auth: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BACKEND_URL`.
 
-Never commit `.env`. Rotate any key that ever appeared in git history. Required server-only secrets include:
+Strongly recommended for the checklist: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`, `REVENUECAT_ENTITLEMENT_PRO`, `OPENAI_API_KEY`, Twilio vars, `CRON_SECRET` (weekly job), `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SECURITY_ALERT_EMAIL`.
 
-`SUPABASE_SERVICE_ROLE_KEY` (required for Apple notifications + admin user delete / session revoke), `OPENAI_API_KEY`, `TWILIO_AUTH_TOKEN`, `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`, `UPSTASH_REDIS_REST_TOKEN`, `CRON_SECRET` (for `/internal/weekly-digest`). Optional: **`APPLE_NOTIFICATIONS_AUDIENCE`** if the JWT `aud` is not `com.buttontech.button`.
-
-## Weekly digest
-
-`GET /internal/weekly-digest` with `Authorization: Bearer <CRON_SECRET>`. Wire a Monday 9am cron on your host. Set `RESEND_API_KEY` + `SECURITY_ALERT_EMAIL` for email delivery.
+**Sign in with Apple notifications:** `SUPABASE_SERVICE_ROLE_KEY` (service role — server only); optional `APPLE_NOTIFICATIONS_AUDIENCE` (defaults to `com.buttontech.button`, must match JWT `aud` from Apple).

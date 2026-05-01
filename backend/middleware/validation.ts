@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import type { ValidationTargets } from "hono";
-import { stripHtmlAndScripts } from "../lib/stripHtml";
+import { sanitizeUserText } from "../lib/sanitize";
 
 // NOTE: Never log env values - they contain secrets
 
@@ -36,7 +36,7 @@ export const ALLOWED_AUDIO_MIME_TYPES = [
   "video/mp4", // Some mobile recorders use video/mp4 container for audio
 ] as const;
 
-/** 10 MB — hard cap before OpenAI; aligns with financial abuse limits */
+/** 10 MB — OpenAI / abuse cap per client security checklist */
 export const MAX_AUDIO_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
@@ -92,7 +92,7 @@ export const extractedEventSchema = z
   .object({
     title: z
       .string()
-      .transform((v) => stripHtmlAndScripts(v.trim()))
+      .transform((v) => sanitizeUserText(v.trim(), 500))
       .pipe(z.string().min(1).max(500)),
     date: z
       .string()
@@ -104,10 +104,9 @@ export const extractedEventSchema = z
       .pipe(z.string().regex(/^\d{2}:\d{2}$/, "time must be HH:MM format")),
     description: z
       .string()
-      .transform((v) => stripHtmlAndScripts(v.trim()))
-      .pipe(z.string().max(500))
       .optional()
-      .default(""),
+      .default("")
+      .transform((v) => sanitizeUserText(v.trim(), 500)),
   })
   .strict();
 

@@ -3,15 +3,19 @@ import { z } from "zod";
 import { prisma } from "../prisma";
 import type { SupabaseUser } from "../auth";
 import { rateLimit } from "../middleware/rateLimit";
-import { rateLimitPhoneAuthIp } from "../middleware/redisRateLimits";
+import { upstashAuthIpLimit } from "../middleware/upstashLimits";
 import { validateBody } from "../middleware/validation";
+import { sendTwilioSmsGuarded } from "../services/twilioSendGuarded";
 import { env } from "../env.ts";
-import { stripHtmlAndScripts } from "../lib/stripHtml";
-import { normalizeE164, e164PhoneSchema } from "../lib/phoneE164";
-import { hashVerificationCode, verifyVerificationCode } from "../lib/verificationCodeHash";
+import { sanitizeUserText } from "../lib/sanitize";
+import {
+  generatePhoneCodeSalt,
+  hashPhoneCode,
+  verifyPhoneCode,
+  isE164Phone,
+} from "../lib/phoneCode";
 import { getEffectivePlan } from "../services/planResolution";
-import { assertCanSendUserSms, assertCanSendVerificationToPhone, logTwilioSms } from "../services/twilioLogService";
-import { sendTwilioSms } from "../services/twilioClient";
+import { countPhoneVerificationSendsLastHour } from "../services/twilioLogService";
 
 export const userRouter = new Hono<{ Variables: { user: SupabaseUser | null } }>();
 
@@ -29,7 +33,7 @@ const patchSettingsSchema = z
       .string()
       .min(1)
       .max(80)
-      .transform((s) => stripHtmlAndScripts(s.trim()))
+      .transform((s) => sanitizeUserText(s, 80))
       .optional(),
     username: z
       .string()
@@ -46,18 +50,18 @@ const patchSettingsSchema = z
   .strict();
 
 const phoneSendSchema = z.object({
-  phone: z.string().min(8).max(32),
+  phone: z.string().min(10).max(20),
 });
 
 const phoneVerifySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 
-const MAX_VERIFY_ATTEMPTS = 3;
-
 function randomSixDigit(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
+
+const MAX_VERIFY_ATTEMPTS = 3;
 
 userRouter.get("/profile", rateLimit("authDefault"), async (c) => {
   const user = c.get("user");
@@ -75,10 +79,10 @@ userRouter.get("/plan-status", rateLimit("authDefault"), async (c) => {
   const user = c.get("user");
   if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
+  const plan = await getEffectivePlan(user.id);
+
   let profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
   if (!profile) profile = await prisma.userProfile.create({ data: { userId: user.id } });
-
-  const isPro = (await getEffectivePlan(user.id)) === "pro";
 
   const now = new Date();
   const lastMonday = new Date(now);
@@ -102,13 +106,14 @@ userRouter.get("/plan-status", rateLimit("authDefault"), async (c) => {
     });
   }
 
+  const isPro = plan === "pro";
   const daysRemaining = isPro ? 999 : Math.max(0, 3 - daysUsed.length);
   const today = now.toISOString().split("T")[0] as string;
   const canRecord = isPro || daysUsed.includes(today) || daysUsed.length < 3;
 
   return c.json({
     data: {
-      plan: isPro ? "pro" : "free",
+      plan,
       daysUsed: daysUsed.length,
       daysRemaining,
       isPro,
@@ -122,16 +127,18 @@ userRouter.get("/planning-profile", rateLimit("authDefault"), async (c) => {
   const user = c.get("user");
   if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
+  const plan = await getEffectivePlan(user.id);
+
   let profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
   if (!profile) profile = await prisma.userProfile.create({ data: { userId: user.id } });
-
-  const isPro = (await getEffectivePlan(user.id)) === "pro";
 
   const badges = await prisma.badge.findMany({
     where: { userId: user.id },
     orderBy: { earnedAt: "desc" },
     select: { badgeType: true, earnedAt: true },
   });
+
+  const isPro = plan === "pro";
 
   return c.json({
     data: {
@@ -158,12 +165,13 @@ userRouter.get("/partner-insights", rateLimit("authDefault"), async (c) => {
   const user = c.get("user");
   if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
-  const me = await prisma.userProfile.findUnique({ where: { userId: user.id } });
-  const isPro = (await getEffectivePlan(user.id)) === "pro";
-  if (!me || !isPro) {
+  const plan = await getEffectivePlan(user.id);
+  if (plan !== "pro") {
     return c.json({ error: { message: "Pro only", code: "PRO_REQUIRED" } }, 403);
   }
-  if (!me.accountabilityPartnerId) {
+
+  const me = await prisma.userProfile.findUnique({ where: { userId: user.id } });
+  if (!me?.accountabilityPartnerId) {
     return c.json({ data: { partner: null } });
   }
 
@@ -189,11 +197,13 @@ userRouter.patch(
     const user = c.get("user");
     if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
+    const plan = await getEffectivePlan(user.id);
+
     let profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
     if (!profile) profile = await prisma.userProfile.create({ data: { userId: user.id } });
 
     const body = c.req.valid("json");
-    const isPro = (await getEffectivePlan(user.id)) === "pro";
+    const isPro = plan === "pro";
 
     if (body.smsRemindersEnabled === true && !isPro) {
       return c.json({ error: { message: "SMS reminders are a Pro feature.", code: "PRO_REQUIRED" } }, 403);
@@ -227,43 +237,45 @@ userRouter.patch(
 
 userRouter.post(
   "/phone/send-code",
-  rateLimitPhoneAuthIp(),
   rateLimit("authStrict"),
+  upstashAuthIpLimit,
   validateBody(phoneSendSchema),
   async (c) => {
     const user = c.get("user");
     if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
-    const profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
-    const isPro = (await getEffectivePlan(user.id)) === "pro";
-    if (!profile || !isPro) {
+    const plan = await getEffectivePlan(user.id);
+    if (plan !== "pro") {
       return c.json({ error: { message: "Pro only", code: "PRO_REQUIRED" } }, 403);
     }
 
-    if (profile.smsFlagged) {
-      return c.json({ error: { message: "SMS disabled on this account.", code: "SMS_BLOCKED" } }, 403);
+    const profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
+    if (!profile) {
+      return c.json({ error: { message: "Profile not found", code: "NOT_FOUND" } }, 404);
+    }
+
+    if (profile.smsFlagged || profile.smsBlockedAt) {
+      return c.json({ error: { message: "SMS is blocked for this account.", code: "SMS_BLOCKED" } }, 403);
     }
 
     if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) {
       return c.json({ error: { message: "SMS not configured on server", code: "SMS_DISABLED" } }, 503);
     }
 
-    const rawPhone = c.req.valid("json").phone;
-    const normalized = normalizeE164(rawPhone);
-    const parsedPhone = e164PhoneSchema.safeParse(normalized);
-    if (!parsedPhone.success) {
+    const { phone: rawPhone } = c.req.valid("json");
+    const phone = rawPhone.trim();
+    if (!isE164Phone(phone)) {
       return c.json(
-        { error: { message: "Phone must be E.164 format (e.g. +15551234567).", code: "INVALID_PHONE" } },
+        { error: { message: "Phone must be in E.164 format (e.g. +15551234567).", code: "INVALID_PHONE" } },
         400
       );
     }
-    const phone = parsedPhone.data;
 
     const other = await prisma.userProfile.findFirst({
       where: {
         phoneNumber: phone,
-        userId: { not: user.id },
         verifiedPhone: true,
+        NOT: { userId: user.id },
       },
     });
     if (other) {
@@ -273,48 +285,43 @@ userRouter.post(
       );
     }
 
-    const phoneGate = await assertCanSendVerificationToPhone(phone);
-    if (!phoneGate.ok) {
-      const retryAfterSeconds = 3600;
-      c.header("Retry-After", String(retryAfterSeconds));
+    const sendsLastHour = await countPhoneVerificationSendsLastHour(phone);
+    if (sendsLastHour >= 3) {
+      c.header("Retry-After", "3600");
       return c.json(
-        { error: { message: "Too many verification attempts for this number. Try again later.", code: phoneGate.code } },
+        { error: { message: "Too many verification attempts for this number. Try again later.", code: "RATE_LIMITED" } },
         429
       );
     }
 
-    const userSms = await assertCanSendUserSms(user.id);
-    if (!userSms.ok) {
-      c.header("Retry-After", "86400");
-      return c.json(
-        { error: { message: "Daily SMS limit reached. Try again tomorrow.", code: userSms.code } },
-        429
-      );
-    }
-
-    const plainCode = randomSixDigit();
-    const codeHash = hashVerificationCode(plainCode);
+    const code = randomSixDigit();
+    const salt = generatePhoneCodeSalt();
+    const codeHash = hashPhoneCode(code, salt);
     const expiresAt = new Date(Date.now() + 10 * 60_000);
 
     await prisma.phoneVerification.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, codeHash, expiresAt, verifyAttempts: 0 },
-      update: { codeHash, expiresAt, verifyAttempts: 0 },
+      create: {
+        userId: user.id,
+        codeHash,
+        codeSalt: salt,
+        verifyAttempts: 0,
+        expiresAt,
+      },
+      update: {
+        codeHash,
+        codeSalt: salt,
+        verifyAttempts: 0,
+        expiresAt,
+      },
     });
 
-    const sent = await sendTwilioSms(
-      phone,
-      `Your Button verification code is ${plainCode}. It expires in 10 minutes.`
-    );
-    await logTwilioSms({
+    const sent = await sendTwilioSmsGuarded({
       userId: user.id,
       phoneTo: phone,
+      body: `Your Button verification code is ${code}. It expires in 10 minutes.`,
       purpose: "verification",
-      success: Boolean(sent),
-      twilioSid: sent?.sid ?? null,
-      errorMessage: sent ? null : "send_failed",
     });
-
     if (!sent) {
       return c.json({ error: { message: "Could not send SMS", code: "SMS_SEND_FAILED" } }, 502);
     }
@@ -330,17 +337,21 @@ userRouter.post(
 
 userRouter.post(
   "/phone/verify",
-  rateLimitPhoneAuthIp(),
   rateLimit("authStrict"),
+  upstashAuthIpLimit,
   validateBody(phoneVerifySchema),
   async (c) => {
     const user = c.get("user");
     if (!user) return c.json({ error: { message: "Unauthorized", code: "UNAUTHORIZED" } }, 401);
 
-    const profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
-    const isPro = (await getEffectivePlan(user.id)) === "pro";
-    if (!profile || !isPro) {
+    const plan = await getEffectivePlan(user.id);
+    if (plan !== "pro") {
       return c.json({ error: { message: "Pro only", code: "PRO_REQUIRED" } }, 403);
+    }
+
+    const profile = await prisma.userProfile.findUnique({ where: { userId: user.id } });
+    if (!profile) {
+      return c.json({ error: { message: "Profile not found", code: "NOT_FOUND" } }, 404);
     }
 
     const { code } = c.req.valid("json");
@@ -350,10 +361,11 @@ userRouter.post(
     }
 
     if (row.verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
-      return c.json({ error: { message: "Too many failed attempts. Request a new code.", code: "TOO_MANY_ATTEMPTS" } }, 400);
+      return c.json({ error: { message: "Too many failed attempts. Request a new code.", code: "TOO_MANY_ATTEMPTS" } }, 429);
     }
 
-    if (!verifyVerificationCode(code, row.codeHash)) {
+    const ok = verifyPhoneCode(code, row.codeSalt, row.codeHash);
+    if (!ok) {
       await prisma.phoneVerification.update({
         where: { userId: user.id },
         data: { verifyAttempts: { increment: 1 } },

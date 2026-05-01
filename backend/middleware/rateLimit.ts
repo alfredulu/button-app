@@ -7,8 +7,9 @@
  * This implementation uses a sliding window algorithm (tracking timestamps in an array)
  * which provides more accurate rate limiting compared to fixed-window counters.
  *
- * NOTE: This is an in-memory implementation suitable for single-instance deployments.
- * For horizontal scaling, replace with a shared store (e.g. Redis).
+ * NOTE: In-memory buckets complement Upstash (`middleware/upstashLimits.ts`) for
+ * route-specific limits. When UPSTASH_* env is set, Redis-backed limits apply; otherwise
+ * an in-memory fallback runs for local development.
  */
 
 import type { Context, MiddlewareHandler } from "hono";
@@ -20,7 +21,7 @@ type WindowEntry = {
   lastSeenMs: number;
 };
 
-export type RateLimitTier = "publicStrict" | "authStrict" | "authDefault";
+type RateLimitTier = "publicStrict" | "authStrict" | "authDefault";
 
 /**
  * Rate limit tier definitions.

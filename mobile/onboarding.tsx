@@ -5,12 +5,13 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,40 +20,19 @@ import Animated, {
   Easing,
   type SharedValue,
 } from "react-native-reanimated";
-import { Redirect, useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { Redirect, useRouter, type Href } from "expo-router";
 import { supabase, isSupabaseConfigured } from "@/lib/auth/supabase";
 import { useSession } from "@/lib/auth/use-session";
-import { setPostSignupPersonalizationPending } from "@/lib/onboarding-flow";
-
-function isEmailNotConfirmedError(e: unknown): boolean {
-  if (typeof e !== "object" || e === null) return false;
-  const o = e as { message?: string; code?: string };
-  if (o.code === "email_not_confirmed") return true;
-  const m = (o.message ?? "").toLowerCase();
-  return m.includes("email not confirmed") || m.includes("email_not_confirmed");
-}
-
-async function resendConfirmationEmail(address: string) {
-  const { error } = await supabase.auth.resend({ type: "signup", email: address });
-  if (error) {
-    Alert.alert("Could not resend", error.message);
-  } else {
-    Alert.alert("Email sent", "Check your inbox, spam, and promotions folders.");
-  }
-}
 
 export default function Onboarding() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string | string[] }>();
   const { data: sessionData, isLoading: sessionLoading } = useSession();
   const authInFlight = useRef(false);
 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [mode, setMode] = useState<"login" | "signup">("signup");
 
   // Entrance animation shared values
   const logoOpacity = useSharedValue(0);
@@ -65,26 +45,13 @@ export default function Onboarding() {
   const modeTitleY = useSharedValue(20);
   const emailOpacity = useSharedValue(0);
   const emailY = useSharedValue(20);
-  const passwordOpacity = useSharedValue(0);
-  const passwordY = useSharedValue(20);
   const buttonOpacity = useSharedValue(0);
   const buttonY = useSharedValue(20);
-  const toggleOpacity = useSharedValue(0);
-  const toggleY = useSharedValue(20);
   const termsOpacity = useSharedValue(0);
   const termsY = useSharedValue(20);
 
-  // Button press spring scale
   const buttonScale = useSharedValue(1);
-
   const enterConfig = { duration: 350, easing: Easing.out(Easing.cubic) };
-
-  useEffect(() => {
-    const m = params.mode;
-    const mode = Array.isArray(m) ? m[0] : m;
-    if (mode === "signin") setIsSignUp(false);
-    if (mode === "signup") setIsSignUp(true);
-  }, [params.mode]);
 
   useEffect(() => {
     const pairs: Array<[SharedValue<number>, SharedValue<number>, number]> = [
@@ -92,13 +59,11 @@ export default function Onboarding() {
       [taglineOpacity, taglineY, 80],
       [ornamentOpacity, ornamentY, 160],
       [modeTitleOpacity, modeTitleY, 260],
-      [emailOpacity, emailY, 320],
-      [passwordOpacity, passwordY, 380],
-      [buttonOpacity, buttonY, 440],
-      [toggleOpacity, toggleY, 500],
-      [termsOpacity, termsY, 560],
+      [emailOpacity, emailY, 340],
+      [buttonOpacity, buttonY, 420],
+      [termsOpacity, termsY, 500],
     ];
-    const timers: ReturnType<typeof setTimeout>[] = pairs.map(([opacity, y, delay]) =>
+    const timers = pairs.map(([opacity, y, delay]) =>
       setTimeout(() => {
         opacity.value = withTiming(1, enterConfig);
         y.value = withTiming(0, enterConfig);
@@ -127,17 +92,9 @@ export default function Onboarding() {
     opacity: emailOpacity.value,
     transform: [{ translateY: emailY.value }],
   }));
-  const passwordInputStyle = useAnimatedStyle(() => ({
-    opacity: passwordOpacity.value,
-    transform: [{ translateY: passwordY.value }],
-  }));
   const buttonContainerStyle = useAnimatedStyle(() => ({
     opacity: buttonOpacity.value,
     transform: [{ translateY: buttonY.value }],
-  }));
-  const toggleAnimStyle = useAnimatedStyle(() => ({
-    opacity: toggleOpacity.value,
-    transform: [{ translateY: toggleY.value }],
   }));
   const termsAnimStyle = useAnimatedStyle(() => ({
     opacity: termsOpacity.value,
@@ -147,87 +104,75 @@ export default function Onboarding() {
     transform: [{ scale: buttonScale.value }],
   }));
 
-  const isDisabled = !email.trim() || !password || loading;
+  const trimmedEmail = email.trim();
+  const isValidEmail =
+    trimmedEmail.length > 3 &&
+    trimmedEmail.includes("@") &&
+    trimmedEmail.includes(".");
+  const isDisabled = !isValidEmail || loading;
 
   if (!sessionLoading && sessionData?.user && !authInFlight.current) {
     return <Redirect href="/" />;
   }
 
   const handleSubmit = async () => {
+    if (loading) return;
+
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !trimmedEmail.includes("@")) {
+
+    if (!isValidEmail) {
       Alert.alert("Invalid email", "Please enter a valid email address.");
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Weak password", "Password must be at least 6 characters.");
-      return;
-    }
+
     if (!isSupabaseConfigured()) {
       Alert.alert(
         "Supabase not configured",
-        "Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to mobile/.env (Supabase → Settings → API), then restart Expo with npx expo start --clear."
+        "Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to mobile/.env, then restart Expo with npx expo start --clear."
       );
       return;
     }
 
     authInFlight.current = true;
     setLoading(true);
+
     try {
-      if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email: trimmedEmail, password });
-        if (error) throw error;
-        if (data.session) {
-          await setPostSignupPersonalizationPending(true);
-          router.replace("/personalization" as Href);
-        } else {
-          authInFlight.current = false;
+      const { error } = await supabase.auth.signInWithOtp({
+        email: trimmedEmail,
+        options: {
+          shouldCreateUser: mode === "signup",
+        },
+      });
+
+      if (error) {
+        // safer login handling (don’t depend on exact message due to supabase inconsistency)
+        if (mode === "login") {
           Alert.alert(
-            "Confirm your email",
-            "Supabase sent a confirmation link. It can take a few minutes and often lands in spam or promotions.",
-            [
-              { text: "OK" },
-              { text: "Resend email", onPress: () => void resendConfirmationEmail(trimmedEmail) },
-            ]
+            "Unable to sign in",
+            "Please make sure this email is registered or sign up instead."
           );
+        } else {
+          Alert.alert("Error", error.message);
         }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
-        if (error) {
-          if (isEmailNotConfirmedError(error)) {
-            authInFlight.current = false;
-            Alert.alert(
-              "Email not confirmed",
-              "Open the link from your signup email first. Check spam/promotions. In Supabase Dashboard you can also turn off “Confirm email” for testing.",
-              [
-                { text: "OK" },
-                { text: "Resend confirmation", onPress: () => void resendConfirmationEmail(trimmedEmail) },
-              ]
-            );
-            return;
-          }
-          throw error;
-        }
-        router.replace("/(app)" as Href);
-      }
-    } catch (e: unknown) {
-      authInFlight.current = false;
-      if (isEmailNotConfirmedError(e)) {
-        Alert.alert(
-          "Email not confirmed",
-          "Open the link from your signup email first. Check spam/promotions.",
-          [
-            { text: "OK" },
-            { text: "Resend confirmation", onPress: () => void resendConfirmationEmail(trimmedEmail) },
-          ]
-        );
+
+        authInFlight.current = false;
         return;
       }
+
+      router.push(`/verify?email=${encodeURIComponent(trimmedEmail)}`);
+      authInFlight.current = false;
+    } catch (e: unknown) {
+      authInFlight.current = false;
+
       const raw = e instanceof Error ? e.message : String(e);
+
       const message =
         raw === "Network request failed" || raw.includes("fetch")
-          ? "Could not reach Supabase. Check: (1) phone Wi‑Fi, (2) EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in mobile/.env match your project, (3) restart Metro after editing .env."
-          : raw || "Something went wrong. Please try again.";
+          ? "Check your internet connection and try again."
+          : raw.toLowerCase().includes("rate")
+            ? "Too many attempts. Please wait a bit before trying again."
+            : raw || "Something went wrong. Please try again.";
+
       Alert.alert("Error", message);
     } finally {
       setLoading(false);
@@ -258,38 +203,44 @@ export default function Onboarding() {
         {/* Auth section */}
         <View style={styles.authSection}>
           <Animated.Text style={[styles.modeTitle, modeTitleStyle]}>
-            {isSignUp ? "Create account" : "Welcome back"}
+            Enter your email
           </Animated.Text>
+          <Animated.Text style={[styles.modeSubtitle, modeTitleStyle]}>
+            We’ll send you a 6-digit code to continue.
+          </Animated.Text>
+
+          <View style={{ flexDirection: "row", marginBottom: 20 }}>
+            <Pressable onPress={() => setMode("login")}>
+              <Text
+                style={{ marginRight: 16, opacity: mode === "login" ? 1 : 0.4 }}
+              >
+                Login
+              </Text>
+            </Pressable>
+
+            <Pressable onPress={() => setMode("signup")}>
+              <Text style={{ opacity: mode === "signup" ? 1 : 0.4 }}>
+                Sign up
+              </Text>
+            </Pressable>
+          </View>
 
           <Animated.View style={emailInputStyle}>
             <TextInput
               style={[styles.input, emailFocused && styles.inputFocused]}
-              placeholder="Email"
+              placeholder="you@email.com"
               placeholderTextColor="#9a9a95"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => setEmail(text.trimStart())}
               autoCapitalize="none"
               keyboardType="email-address"
-              returnKeyType="next"
+              returnKeyType="done"
+              textContentType="emailAddress"
+              autoFocus
+              keyboardAppearance="light"
               onFocus={() => setEmailFocused(true)}
               onBlur={() => setEmailFocused(false)}
-              testID="email-input"
-            />
-          </Animated.View>
-
-          <Animated.View style={passwordInputStyle}>
-            <TextInput
-              style={[styles.input, passwordFocused && styles.inputFocused]}
-              placeholder="Password"
-              placeholderTextColor="#9a9a95"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              returnKeyType="done"
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
               onSubmitEditing={handleSubmit}
-              testID="password-input"
             />
           </Animated.View>
 
@@ -297,11 +248,17 @@ export default function Onboarding() {
             <Pressable
               onPressIn={() => {
                 if (!isDisabled) {
-                  buttonScale.value = withSpring(0.96, { damping: 18, stiffness: 220 });
+                  buttonScale.value = withSpring(0.96, {
+                    damping: 18,
+                    stiffness: 220,
+                  });
                 }
               }}
               onPressOut={() => {
-                buttonScale.value = withSpring(1.0, { damping: 18, stiffness: 220 });
+                buttonScale.value = withSpring(1.0, {
+                  damping: 18,
+                  stiffness: 220,
+                });
               }}
               onPress={handleSubmit}
               disabled={isDisabled}
@@ -318,29 +275,29 @@ export default function Onboarding() {
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
                   <Text style={styles.darkButtonText}>
-                    {isSignUp ? "Create account" : "Sign in"}
+                    {loading
+                      ? "Sending..."
+                      : mode === "login"
+                        ? "Login"
+                        : "Sign up"}
                   </Text>
                 )}
               </Animated.View>
             </Pressable>
           </Animated.View>
 
-          <Animated.View style={[styles.toggleBtnWrapper, toggleAnimStyle]}>
-            <Pressable
-              onPress={() => setIsSignUp(!isSignUp)}
-              style={styles.toggleBtn}
-              testID="toggle-mode"
-            >
-              <Text style={styles.toggleText}>
-                {isSignUp
-                  ? "Already have an account? Sign in"
-                  : "Don't have an account? Sign up"}
-              </Text>
-            </Pressable>
-          </Animated.View>
-
           <Animated.Text style={[styles.termsText, termsAnimStyle]}>
-            By continuing, you agree to our Terms and Privacy Policy.
+            By continuing, you agree to our{" "}
+            <Text
+              accessibilityRole="link"
+              style={styles.termsLink}
+              onPress={() =>
+                void Linking.openURL("https://getbuttonapp.com/privacy")
+              }
+            >
+              Terms and Privacy Policy
+            </Text>
+            .
           </Animated.Text>
         </View>
       </KeyboardAvoidingView>
@@ -396,7 +353,14 @@ const styles = StyleSheet.create({
     fontFamily: "PlayfairDisplay_700Bold",
     fontSize: 24,
     color: "#1a1a18",
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  modeSubtitle: {
+    fontFamily: "DMSans_300Light",
+    fontSize: 14,
+    color: "#9a9a95",
+    lineHeight: 20,
+    marginBottom: 8,
   },
   input: {
     borderBottomWidth: 1.5,
@@ -423,14 +387,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     letterSpacing: 0.2,
   },
-  toggleBtnWrapper: { alignItems: "center" },
-  toggleBtn: { paddingVertical: 4 },
-  toggleText: {
-    fontFamily: "DMSans_400Regular",
-    fontSize: 14,
-    color: "#9a9a95",
-    textDecorationLine: "underline",
-  },
   termsText: {
     fontFamily: "DMSans_300Light",
     fontSize: 11,
@@ -438,5 +394,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     lineHeight: 16,
+  },
+  termsLink: {
+    fontFamily: "DMSans_400Regular",
+    color: "#1a1a18",
+    textDecorationLine: "underline",
   },
 });

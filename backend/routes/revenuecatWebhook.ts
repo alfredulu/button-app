@@ -1,59 +1,58 @@
 import { Hono } from "hono";
-import { prisma } from "../prisma";
 import { env } from "../env.ts";
-import { invalidatePlanCache } from "../services/planResolution";
+import { fetchRevenueCatSubscriber, isProFromRevenueCatPayload } from "../services/revenueCat";
+import { applyRevenueCatWebhookPlan } from "../services/planResolution";
 
-type RcEvent = {
-  type?: string;
-  app_user_id?: string;
-};
-
-/**
- * RevenueCat server notifications. Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET> (dashboard).
- */
 export const revenuecatWebhookRouter = new Hono();
 
+function extractAppUserId(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const o = body as Record<string, unknown>;
+  const ev = o.event;
+  if (ev && typeof ev === "object") {
+    const id = (ev as Record<string, unknown>).app_user_id;
+    if (typeof id === "string" && id.length > 0) return id;
+  }
+  const top = o.app_user_id;
+  if (typeof top === "string" && top.length > 0) return top;
+  return null;
+}
+
 revenuecatWebhookRouter.post("/", async (c) => {
-  const secret = env.REVENUECAT_WEBHOOK_SECRET;
+  const secret = env.REVENUECAT_WEBHOOK_SECRET?.trim();
   if (!secret) {
-    return c.json({ error: { message: "Webhook not configured", code: "DISABLED" } }, 503);
+    return c.json({ error: { message: "Webhook not configured", code: "NOT_CONFIGURED" } }, 503);
   }
 
-  const auth = c.req.header("authorization") ?? c.req.header("Authorization");
-  if (auth !== `Bearer ${secret}`) {
-    return c.json({ error: { message: "Forbidden", code: "INVALID_SIGNATURE" } }, 403);
+  const auth = c.req.header("Authorization")?.trim() ?? "";
+  const expectedBearer = `Bearer ${secret}`;
+  const ok = auth === expectedBearer || auth === secret;
+  if (!ok) {
+    return c.json({ error: { message: "Forbidden", code: "FORBIDDEN" } }, 403);
   }
 
-  let body: { event?: RcEvent };
+  let body: unknown;
   try {
-    body = (await c.req.json()) as { event?: RcEvent };
+    body = await c.req.json();
   } catch {
     return c.json({ error: { message: "Invalid JSON", code: "BAD_REQUEST" } }, 400);
   }
 
-  const ev = body.event;
-  const userId = ev?.app_user_id;
-  if (!userId || typeof userId !== "string") {
-    return c.json({ received: true });
+  const appUserId = extractAppUserId(body);
+  if (!appUserId) {
+    return c.json({ ok: true });
   }
 
-  const t = ev.type ?? "";
-  const proEvents = new Set([
-    "INITIAL_PURCHASE",
-    "RENEWAL",
-    "PRODUCT_CHANGE",
-    "UNCANCELLATION",
-    "SUBSCRIPTION_EXTENDED",
-  ]);
-  const freeEvents = new Set(["CANCELLATION", "EXPIRATION", "BILLING_ISSUE"]);
-
-  if (proEvents.has(t)) {
-    await prisma.userProfile.updateMany({ where: { userId }, data: { plan: "pro" } });
-    invalidatePlanCache(userId);
-  } else if (freeEvents.has(t)) {
-    await prisma.userProfile.updateMany({ where: { userId }, data: { plan: "free" } });
-    invalidatePlanCache(userId);
+  const ent = env.REVENUECAT_ENTITLEMENT_PRO?.trim();
+  if (!ent) {
+    return c.json({ ok: true });
   }
 
-  return c.json({ received: true });
+  const sub = await fetchRevenueCatSubscriber(appUserId);
+  const isPro = isProFromRevenueCatPayload(sub, ent);
+  await applyRevenueCatWebhookPlan(appUserId, isPro);
+
+  return c.json({ ok: true });
 });
+
+revenuecatWebhookRouter.get("/", (c) => c.text("ok", 200));

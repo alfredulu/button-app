@@ -1,6 +1,6 @@
 import { env } from "../env.ts";
 
-export async function sendTwilioSms(to: string, body: string): Promise<{ sid: string } | null> {
+export async function postTwilioSms(to: string, body: string): Promise<{ sid: string } | null> {
   const sid = env.TWILIO_ACCOUNT_SID;
   const token = env.TWILIO_AUTH_TOKEN;
   const from = env.TWILIO_PHONE_NUMBER;
