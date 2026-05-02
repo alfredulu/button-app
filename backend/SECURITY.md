@@ -13,7 +13,6 @@ This document maps the launch security requirements to **what the server impleme
 - **Input:** User text sanitized (HTML/script stripped), **500** char cap on key fields; Prisma only (no raw string SQL).
 - **Indexes:** `userId` (and reminder composite) on Prisma models as in `schema.prisma`.
 - **Weekly digest:** `GET /internal/weekly-digest` with `Authorization: Bearer <CRON_SECRET>` — emails summary via Resend when configured.
-- **Sign in with Apple (server-to-server):** `POST /api/auth/apple/notifications` — body `{ "payload": "<JWS>" }`. JWT signature verified with Apple’s JWKS; invalid/missing signature → **403**. Requires **`SUPABASE_SERVICE_ROLE_KEY`**. Handles **`account-deleted`** (Apple’s name; `account-delete` alias), **`consent-revoked`**, **`email-disabled`** / **`email-enabled`**. Resolves users by `UserProfile.appleSubject` or Supabase Auth identities (apple `sub`).
 - **Secrets:** Never commit `.env` (see `.gitignore`). Use Render / dashboard env for production.
 
 ## Configure manually (not in code)
@@ -30,5 +29,3 @@ This document maps the launch security requirements to **what the server impleme
 Required for core auth: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BACKEND_URL`.
 
 Strongly recommended for the checklist: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`, `REVENUECAT_ENTITLEMENT_PRO`, `OPENAI_API_KEY`, Twilio vars, `CRON_SECRET` (weekly job), `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `SECURITY_ALERT_EMAIL`.
-
-**Sign in with Apple notifications:** `SUPABASE_SERVICE_ROLE_KEY` (service role — server only); optional `APPLE_NOTIFICATIONS_AUDIENCE` (defaults to `com.buttontech.button`, must match JWT `aud` from Apple).

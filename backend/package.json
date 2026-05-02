@@ -27,17 +27,15 @@
     "@hono/zod-validator": "^0.7.6",
     "@prisma/client": "6",
     "@supabase/supabase-js": "^2.98.0",
-    "@vibecodeapp/backend-sdk": "^1.0.1",
-    "@vibecodeapp/cloud-studio": "^0.2.4",
-    "@vibecodeapp/proxy": "^2.0.3",
-    "better-auth": "^1.5.4",
-    "hono": "4.6.0",
-    "zod": "4.1.11",
-    "date-fns": "^4.1.0",
-    "dotenv": "^16.4.5",
     "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.34.3",
-    "jose": "^6.0.10"
+    "@vibecodeapp/backend-sdk": "^1.0.1",
+    "@vibecodeapp/cloud-studio": "^0.2.4",
+    "better-auth": "^1.5.4",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.5",
+    "hono": "4.6.0",
+    "zod": "4.1.11"
   },
   "prisma": {
     "schema": "schema.prisma"

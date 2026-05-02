@@ -88,12 +88,6 @@ const envSchema = z.object({
   RESEND_FROM_EMAIL: z.string().optional(),
 
   CRON_SECRET: z.string().optional(),
-
-  /** Supabase service role — required for Apple S2S notifications + auth admin (never expose to client). */
-  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-
-  /** `aud` claim for Sign in with Apple server notifications (native app = bundle ID). */
-  APPLE_NOTIFICATIONS_AUDIENCE: z.string().optional(),
 });
 
 /**

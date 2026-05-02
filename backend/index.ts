@@ -1,4 +1,4 @@
-import "@vibecodeapp/proxy"; // DO NOT REMOVE OTHERWISE VIBECODE PROXY WILL NOT WORK
+// import "@vibecodeapp/proxy";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import "./env.ts";
@@ -14,7 +14,6 @@ import { remindersPublicRouter } from "./routes/reminders";
 import { remindersAuthRouter } from "./routes/remindersSchedule";
 import { revenuecatWebhookRouter } from "./routes/revenuecatWebhook";
 import { internalWeeklyRouter } from "./routes/internalWeekly";
-import { appleNotificationsRouter } from "./routes/appleAuthNotifications";
 import { socialRouter } from "./routes/social";
 import { logger } from "hono/logger";
 import { rateLimit } from "./middleware/rateLimit";
@@ -40,7 +39,8 @@ const allowed = [
 app.use(
   "*",
   cors({
-    origin: (origin) => (origin && allowed.some((re) => re.test(origin)) ? origin : null),
+    origin: (origin) =>
+      origin && allowed.some((re) => re.test(origin)) ? origin : null,
     credentials: true,
   })
 );
@@ -79,7 +79,6 @@ app.use("*", async (c, next) => {
 });
 
 app.route("/internal", internalWeeklyRouter);
-app.route("/api/auth", appleNotificationsRouter);
 
 app.use("*", async (c, next) => {
   const authHeader = c.req.header("Authorization");

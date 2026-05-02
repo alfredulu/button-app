@@ -62,13 +62,6 @@ model UserProfile {
   smsFlagged   Boolean   @default(false)
   smsBlockedAt DateTime?
 
-  /// Apple Sign in "sub" — speeds up server-to-server notification lookup
-  appleSubject String? @unique
-  /// Hide My Email relay disabled (Apple server notification)
-  applePrivateRelayDisabledAt DateTime?
-  /// User revoked Sign in with Apple consent (sessions invalidated server-side)
-  appleConsentRevokedAt DateTime?
-
   @@index([userId])
 }
 
