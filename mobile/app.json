@@ -4,7 +4,7 @@
     "icon": "./assets/icon.png",
     "slug": "vibecode",
     "scheme": "vibecode",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.buttontech.button",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "Button uses your microphone to record voice input and convert it into calendar events. For example, you can say \"Schedule a meeting tomorrow at 2pm\" to create an event hands-free."
       }
     },
     "android": {
