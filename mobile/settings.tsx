@@ -412,7 +412,11 @@ export default function SettingsScreen() {
                 <View style={styles.rowDivider} />
                 <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
                   <Text style={styles.rowLabel}>Default lead time</Text>
-                  <View style={styles.pillsRow}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.pillsRow}
+                  >
                     {REMINDER_KINDS.map(({ key, label }) => {
                       const selected =
                         (planningProfile?.defaultReminderKind ?? "60") === key;
@@ -437,7 +441,7 @@ export default function SettingsScreen() {
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
                 </View>
               </>
             )}
