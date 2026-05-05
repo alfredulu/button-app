@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { ChevronRight } from "lucide-react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Constants from "expo-constants";
 import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 import Purchases from "react-native-purchases";
@@ -560,7 +561,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <Text style={styles.version}>Button v1.0.0</Text>
+        <Text style={styles.version}>Button v{Constants.expoConfig?.version ?? "1.0.0"}</Text>
       </ScrollView>
     </SafeAreaView>
   );
